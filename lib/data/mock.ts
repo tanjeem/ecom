@@ -1,0 +1,222 @@
+import type { CommerceOrder, InventoryItem } from "@/lib/types/commerce";
+
+export const pipelineStages = [
+  {
+    name: "Payment",
+    count: 86,
+    orders: ["#10482 awaiting COD confirmation", "#10477 card paid"],
+  },
+  {
+    name: "Picking",
+    count: 74,
+    orders: ["Black linen shirt / M", "Wide-leg trouser / S"],
+  },
+  {
+    name: "Packing",
+    count: 71,
+    orders: ["Gift wrap requested", "Address check needed"],
+  },
+  {
+    name: "Dispatch",
+    count: 63,
+    orders: ["Pathao batch 42", "DHL express 7"],
+  },
+  {
+    name: "Aftercare",
+    count: 48,
+    orders: ["Exchange size L to XL", "Review request due"],
+  },
+];
+
+export const initialOrders: CommerceOrder[] = [
+  {
+    id: "#10521",
+    wooId: 10521,
+    source: "WooCommerce",
+    customer: "Maya Rahman",
+    phone: "01711222333",
+    address: "Banani, Dhaka",
+    items: "Linen Shirt, Relaxed Pant",
+    payment: "Card paid",
+    status: "paid",
+    courier: "Pathao",
+    pathaoStatus: "Ready",
+    pathaoConsignment: "",
+    payable: 0,
+    total: 148,
+    city: "Dhaka",
+    margin: "61%",
+    notes: "VIP customer. Add thank-you card.",
+  },
+  {
+    id: "#10520",
+    wooId: 10520,
+    source: "WooCommerce",
+    customer: "Jordan Lee",
+    phone: "01811444555",
+    address: "GEC Circle, Chattogram",
+    items: "Oversized Tee x2",
+    payment: "COD",
+    status: "packed",
+    courier: "Pathao",
+    pathaoStatus: "Booked",
+    pathaoConsignment: "PTH-784201",
+    payable: 84,
+    total: 84,
+    city: "Chattogram",
+    margin: "54%",
+    notes: "Ready for evening pickup.",
+  },
+  {
+    id: "#10519",
+    wooId: 10519,
+    source: "Inbox -> Woo",
+    customer: "Sadia Noor",
+    phone: "01911666777",
+    address: "Zindabazar, Sylhet",
+    items: "Pleated Skirt",
+    payment: "Bkash pending",
+    status: "hold",
+    courier: "On hold",
+    pathaoStatus: "Hold",
+    pathaoConsignment: "",
+    payable: 0,
+    total: 72,
+    city: "Sylhet",
+    margin: "57%",
+    notes: "Payment reminder sent once.",
+  },
+  {
+    id: "#10518",
+    wooId: 10518,
+    source: "WooCommerce",
+    customer: "Ari Khan",
+    phone: "01611999888",
+    address: "Dhanmondi, Dhaka",
+    items: "Denim Jacket",
+    payment: "Card paid",
+    status: "returned",
+    courier: "RedX",
+    pathaoStatus: "Returned",
+    pathaoConsignment: "PTH-784155",
+    payable: 0,
+    total: 132,
+    city: "Dhaka",
+    margin: "49%",
+    notes: "Return requested for size exchange.",
+  },
+  {
+    id: "#10517",
+    wooId: 10517,
+    source: "WooCommerce",
+    customer: "Nadia Ahmed",
+    phone: "+6588801122",
+    address: "Orchard Road, Singapore",
+    items: "Co-ord Set",
+    payment: "Card paid",
+    status: "paid",
+    courier: "DHL",
+    pathaoStatus: "External courier",
+    pathaoConsignment: "",
+    payable: 0,
+    total: 216,
+    city: "Singapore",
+    margin: "64%",
+    notes: "International customs form required.",
+  },
+  {
+    id: "#10516",
+    wooId: 10516,
+    source: "WooCommerce",
+    customer: "Hasan Chowdhury",
+    phone: "01711888777",
+    address: "Chashara, Narayanganj",
+    items: "Chino Pant",
+    payment: "COD",
+    status: "packed",
+    courier: "Pathao",
+    pathaoStatus: "Ready",
+    pathaoConsignment: "",
+    payable: 78,
+    total: 78,
+    city: "Narayanganj",
+    margin: "52%",
+    notes: "Call before delivery.",
+  },
+];
+
+export const inventory: InventoryItem[] = [
+  {
+    sku: "LIN-BLK",
+    name: "Black Linen Shirt",
+    color: "#2d2a28",
+    sizes: { XS: 14, S: 22, M: 7, L: 4, XL: 0 },
+    forecast: "Sold out in 5 days",
+  },
+  {
+    sku: "DEN-IND",
+    name: "Indigo Denim Jacket",
+    color: "#315c8c",
+    sizes: { XS: 6, S: 11, M: 18, L: 9, XL: 3 },
+    forecast: "Reorder in 12 days",
+  },
+  {
+    sku: "CRD-SGE",
+    name: "Sage Co-ord Set",
+    color: "#8ba889",
+    sizes: { XS: 10, S: 5, M: 8, L: 2, XL: 1 },
+    forecast: "Ads constrained by L/XL",
+  },
+  {
+    sku: "TEE-CRM",
+    name: "Cream Oversized Tee",
+    color: "#e7dec9",
+    sizes: { XS: 30, S: 44, M: 39, L: 27, XL: 13 },
+    forecast: "Healthy for 24 days",
+  },
+];
+
+export const ledger = [
+  ["May 27", "Cash", "WooCommerce settlement", "$18,420", ""],
+  ["May 27", "Revenue", "Daily sales recognized", "", "$18,420"],
+  ["May 27", "COGS", "Inventory relieved", "$7,240", ""],
+  ["May 27", "Inventory", "Cost of goods sold", "", "$7,240"],
+  ["May 26", "Ad Expense", "Meta campaign spend", "$3,860", ""],
+  ["May 26", "Accounts Payable", "Meta billing", "", "$3,860"],
+];
+
+export const reconciliation = [
+  ["WooCommerce Payments", "$41,220", "good"],
+  ["COD Courier Settlements", "$17,840", "watch"],
+  ["Refund Liability", "$4,160", "critical"],
+  ["Payment Gateway Fees", "$1,240", "good"],
+];
+
+export const ads = [
+  ["Summer Linen Scale", "$3,420", "$18,960", "5.54x", "$9.60", "Scale"],
+  ["Denim Retargeting", "$1,280", "$4,990", "3.90x", "$12.10", "Hold"],
+  ["Co-ord Broad Test", "$980", "$2,110", "2.15x", "$21.80", "Review"],
+  ["Tee Creative Test", "$720", "$3,240", "4.50x", "$8.90", "Scale"],
+];
+
+export const creatives = [
+  ["Mirror fit check", "4.8x ROAS, fatigue low", "#d4564d"],
+  ["Fabric close-up", "3.9x ROAS, hook winner", "#2f78b7"],
+  ["Before commute", "2.2x ROAS, needs refresh", "#8a7a5c"],
+];
+
+export const ops = [
+  ["Order QA", "Barcode packing, fraud flags, address validation, split shipment controls.", "scan-line"],
+  ["Inventory Planning", "Variant-level forecasts, purchase orders, landed cost, production stages.", "boxes"],
+  ["Finance Controls", "Double-entry ledger, payout reconciliation, tax reports, role approval.", "shield-check"],
+  ["Customer Lifecycle", "Returns, exchanges, loyalty segments, review requests, WhatsApp follow-up.", "messages-square"],
+  ["Growth Engine", "Creative testing, budget rules, contribution margin bidding, stock-aware scaling.", "trending-up"],
+  ["Executive Reporting", "Daily scorecard, cohort repeat rate, cash runway, team accountability.", "presentation"],
+] as const;
+
+export const automations = [
+  ["Low stock pause", "Pause ad sets when winning SKU has fewer than 8 units."],
+  ["COD confirmation", "Send WhatsApp confirmation before courier booking."],
+  ["Margin guardrail", "Flag discounts that push order margin below 42%."],
+  ["Exchange routing", "Reserve replacement item as soon as exchange is approved."],
+];

@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ThreadOps Commerce OS</title>
+    <link rel="preconnect" href="https://unpkg.com" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-lockup">
+          <div class="brand-mark">TO</div>
+          <div>
+            <strong>ThreadOps</strong>
+            <span>Commerce OS</span>
+          </div>
+        </div>
+
+        <nav class="nav-stack">
+          <button class="nav-item is-active" data-view="dashboard" type="button">
+            <i data-lucide="layout-dashboard"></i>
+            <span>Dashboard</span>
+          </button>
+          <button class="nav-item" data-view="orders" type="button">
+            <i data-lucide="package-check"></i>
+            <span>Orders</span>
+          </button>
+          <button class="nav-item" data-view="inventory" type="button">
+            <i data-lucide="boxes"></i>
+            <span>Inventory</span>
+          </button>
+          <button class="nav-item" data-view="accounting" type="button">
+            <i data-lucide="landmark"></i>
+            <span>Accounting</span>
+          </button>
+          <button class="nav-item" data-view="ads" type="button">
+            <i data-lucide="megaphone"></i>
+            <span>Meta Ads</span>
+          </button>
+          <button class="nav-item" data-view="scale" type="button">
+            <i data-lucide="workflow"></i>
+            <span>Scale Ops</span>
+          </button>
+        </nav>
+
+        <div class="sync-panel">
+          <span class="sync-dot"></span>
+          <div>
+            <strong>Last sync 4m ago</strong>
+            <span>WooCommerce, Pathao, bank, Meta</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Clothing brand control room</p>
+            <h1 id="view-title">Dashboard</h1>
+          </div>
+
+          <div class="topbar-actions">
+            <label class="search-field">
+              <i data-lucide="search"></i>
+              <input id="global-search" type="search" placeholder="Search orders, SKU, customer" />
+            </label>
+            <button class="icon-button" type="button" aria-label="Notifications" title="Notifications">
+              <i data-lucide="bell"></i>
+            </button>
+            <button class="primary-action" type="button">
+              <i data-lucide="plus"></i>
+              <span>New Order</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="view is-active" id="dashboard-view" data-title="Dashboard">
+          <div class="kpi-grid">
+            <article class="metric-card">
+              <span>Today sales</span>
+              <strong>$18,420</strong>
+              <small class="positive">+18.4% vs yesterday</small>
+            </article>
+            <article class="metric-card">
+              <span>Open orders</span>
+              <strong>342</strong>
+              <small>71 ready to dispatch</small>
+            </article>
+            <article class="metric-card">
+              <span>Gross margin</span>
+              <strong>58.7%</strong>
+              <small class="positive">+3.2% this week</small>
+            </article>
+            <article class="metric-card">
+              <span>Meta ROAS</span>
+              <strong>4.18x</strong>
+              <small class="warning">Budget pacing 92%</small>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Order Pipeline</h2>
+                  <p>Live handoff from payment to fulfillment.</p>
+                </div>
+                <div class="segmented-control" role="tablist" aria-label="Pipeline period">
+                  <button class="is-selected" type="button">Today</button>
+                  <button type="button">7D</button>
+                  <button type="button">30D</button>
+                </div>
+              </div>
+              <div class="pipeline" id="pipeline"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Stock Alerts</h2>
+                  <p>Reorder before ads outpace supply.</p>
+                </div>
+                <button class="icon-button" type="button" aria-label="Create purchase order" title="Create purchase order">
+                  <i data-lucide="clipboard-plus"></i>
+                </button>
+              </div>
+              <div class="alert-list" id="stock-alerts"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Cash Position</h2>
+                  <p>Cash-in, payables, ad spend, payroll.</p>
+                </div>
+              </div>
+              <div class="cash-meter">
+                <div class="cash-track">
+                  <span style="width: 72%"></span>
+                </div>
+                <div class="cash-row">
+                  <span>Available</span>
+                  <strong>$96,300</strong>
+                </div>
+                <div class="cash-row">
+                  <span>Next 14 day obligations</span>
+                  <strong>$37,940</strong>
+                </div>
+                <div class="cash-row">
+                  <span>Projected surplus</span>
+                  <strong>$58,360</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="orders-view" data-title="Orders">
+          <div class="integration-strip">
+            <article class="integration-card">
+              <i data-lucide="shopping-bag"></i>
+              <div>
+                <span>WooCommerce</span>
+                <strong>Live order source</strong>
+              </div>
+            </article>
+            <article class="integration-card">
+              <i data-lucide="message-square-text"></i>
+              <div>
+                <span>Inbox orders</span>
+                <strong>Paste, verify, create</strong>
+              </div>
+            </article>
+            <article class="integration-card">
+              <i data-lucide="truck"></i>
+              <div>
+                <span>Pathao delivery</span>
+                <strong>Single and bulk booking</strong>
+              </div>
+            </article>
+            <article class="integration-card">
+              <i data-lucide="badge-dollar-sign"></i>
+              <div>
+                <span>Courier payable</span>
+                <strong>COD and status sync</strong>
+              </div>
+            </article>
+          </div>
+
+          <div class="content-grid order-tools-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Inbox Order Tool</h2>
+                  <p>Paste a message order, verify the details, then create it in WooCommerce.</p>
+                </div>
+                <span class="status-pill draft" id="woo-create-status">Draft</span>
+              </div>
+
+              <form class="inbox-form" id="inbox-order-form">
+                <label class="field-block full-span">
+                  <span>Paste inbox order</span>
+                  <textarea id="inbox-paste" rows="4" placeholder="Name: Ayesha&#10;Phone: 01700000000&#10;Address: Banani, Dhaka&#10;Product: Black Linen Shirt M&#10;Price: 2450"></textarea>
+                </label>
+
+                <button class="secondary-action full-span" id="parse-inbox-order" type="button">
+                  <i data-lucide="wand-sparkles"></i>
+                  <span>Parse Paste</span>
+                </button>
+
+                <label class="field-block">
+                  <span>Name</span>
+                  <input id="inbox-name" type="text" placeholder="Customer name" />
+                </label>
+                <label class="field-block">
+                  <span>Phone</span>
+                  <input id="inbox-phone" type="tel" placeholder="Phone number" />
+                </label>
+                <label class="field-block full-span">
+                  <span>Address</span>
+                  <input id="inbox-address" type="text" placeholder="Delivery address" />
+                </label>
+                <label class="field-block">
+                  <span>Product</span>
+                  <input id="inbox-product" type="text" placeholder="Product and variation" />
+                </label>
+                <label class="field-block">
+                  <span>Price</span>
+                  <input id="inbox-price" type="number" min="0" placeholder="0" />
+                </label>
+
+                <button class="primary-action full-span" type="submit">
+                  <i data-lucide="badge-check"></i>
+                  <span>Verify & Create Woo Order</span>
+                </button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Pathao Dispatch</h2>
+                  <p>Send checked orders to Pathao and sync courier status, payable amount, and consignment.</p>
+                </div>
+              </div>
+              <div class="dispatch-summary">
+                <div>
+                  <span>Selected</span>
+                  <strong id="selected-count">0</strong>
+                </div>
+                <div>
+                  <span>Ready for Pathao</span>
+                  <strong id="pathao-ready-count">0</strong>
+                </div>
+                <div>
+                  <span>Total COD payable</span>
+                  <strong id="pathao-payable-total">BDT 0</strong>
+                </div>
+              </div>
+              <div class="toolbar-buttons dispatch-actions">
+                <button class="secondary-action" id="sync-woocommerce" type="button">
+                  <i data-lucide="refresh-cw"></i>
+                  <span>Sync Woo Orders</span>
+                </button>
+                <button class="primary-action" id="bulk-send-pathao" type="button">
+                  <i data-lucide="send"></i>
+                  <span>Send Selected to Pathao</span>
+                </button>
+              </div>
+              <div class="pathao-log" id="pathao-log">Waiting for courier action.</div>
+            </section>
+          </div>
+
+          <div class="module-toolbar">
+            <div class="segmented-control" id="order-filter">
+              <button class="is-selected" data-filter="all" type="button">All</button>
+              <button data-filter="paid" type="button">Paid</button>
+              <button data-filter="packed" type="button">Packed</button>
+              <button data-filter="hold" type="button">Hold</button>
+              <button data-filter="returned" type="button">Returns</button>
+            </div>
+            <div class="toolbar-buttons">
+              <button class="secondary-action" type="button">
+                <i data-lucide="scan-barcode"></i>
+                <span>Scan Pack</span>
+              </button>
+              <button class="secondary-action" id="book-pathao-visible" type="button">
+                <i data-lucide="truck"></i>
+                <span>Book Pathao</span>
+              </button>
+              <button class="primary-action" type="button">
+                <i data-lucide="file-down"></i>
+                <span>Export</span>
+              </button>
+            </div>
+          </div>
+
+          <section class="panel table-panel">
+            <div class="panel-header">
+              <div>
+                <h2>Orders Queue</h2>
+                <p>Click an order for customer, payment, shipment, and return context.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>
+                      <input id="select-all-orders" type="checkbox" aria-label="Select all orders" />
+                    </th>
+                    <th>Order</th>
+                    <th>Source</th>
+                    <th>Customer</th>
+                    <th>Items</th>
+                    <th>Payment</th>
+                    <th>Status</th>
+                    <th>Pathao</th>
+                    <th>Payable</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody id="orders-table"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="inventory-view" data-title="Inventory">
+          <div class="content-grid inventory-layout">
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Variant Matrix</h2>
+                  <p>Color and size availability across active clothing lines.</p>
+                </div>
+                <button class="primary-action" type="button">
+                  <i data-lucide="shopping-cart"></i>
+                  <span>Purchase Order</span>
+                </button>
+              </div>
+              <div class="inventory-grid" id="inventory-grid"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Demand Forecast</h2>
+                  <p>Projected sell-through based on current campaigns.</p>
+                </div>
+              </div>
+              <div class="forecast-list" id="forecast-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="accounting-view" data-title="Accounting">
+          <div class="kpi-grid">
+            <article class="metric-card">
+              <span>Revenue MTD</span>
+              <strong>$428,900</strong>
+              <small class="positive">Collected $391,240</small>
+            </article>
+            <article class="metric-card">
+              <span>COGS</span>
+              <strong>$176,850</strong>
+              <small>Fabric, stitching, packaging</small>
+            </article>
+            <article class="metric-card">
+              <span>Operating expense</span>
+              <strong>$84,710</strong>
+              <small>Ads, payroll, rent, tools</small>
+            </article>
+            <article class="metric-card">
+              <span>Net profit</span>
+              <strong>$167,340</strong>
+              <small class="positive">39.0% margin</small>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>General Ledger</h2>
+                  <p>Double-entry accounting with channel reconciliation.</p>
+                </div>
+                <button class="secondary-action" type="button">
+                  <i data-lucide="plus-circle"></i>
+                  <span>Journal Entry</span>
+                </button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Account</th>
+                      <th>Memo</th>
+                      <th>Debit</th>
+                      <th>Credit</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ledger-table"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Reconciliation</h2>
+                  <p>Payments, refunds, fees, COD settlements.</p>
+                </div>
+              </div>
+              <div class="recon-list" id="recon-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="ads-view" data-title="Meta Ads">
+          <div class="module-toolbar">
+            <div class="segmented-control">
+              <button class="is-selected" type="button">Campaigns</button>
+              <button type="button">Creatives</button>
+              <button type="button">Audiences</button>
+            </div>
+            <button class="primary-action" type="button">
+              <i data-lucide="rocket"></i>
+              <span>Scale Winners</span>
+            </button>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Campaign Performance</h2>
+                  <p>Budget, ROAS, CPA, revenue, and inventory risk.</p>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Campaign</th>
+                      <th>Spend</th>
+                      <th>Revenue</th>
+                      <th>ROAS</th>
+                      <th>CPA</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ads-table"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Creative Library</h2>
+                  <p>Winning looks and fatigue signals.</p>
+                </div>
+              </div>
+              <div class="creative-list" id="creative-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="scale-view" data-title="Scale Ops">
+          <div class="content-grid">
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Operating System</h2>
+                  <p>Processes needed as order volume grows.</p>
+                </div>
+              </div>
+              <div class="ops-grid" id="ops-grid"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Automations</h2>
+                  <p>Rules that reduce manual work.</p>
+                </div>
+              </div>
+              <div class="automation-list" id="automation-list"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <aside class="drawer" id="order-drawer" aria-label="Order details">
+        <button class="icon-button drawer-close" id="drawer-close" type="button" aria-label="Close order details" title="Close">
+          <i data-lucide="x"></i>
+        </button>
+        <div id="drawer-content"></div>
+      </aside>
+    </div>
+  </body>
+</html>
