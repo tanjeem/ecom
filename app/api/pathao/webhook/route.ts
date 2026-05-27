@@ -70,7 +70,7 @@ async function updateWooOrderMeta(orderId: number, consignmentId: string, status
  * - Must return header: X-Pathao-Merchant-Webhook-Integration-Secret: <secret>
  *
  * Webhook URL to set in Pathao dashboard:
- *   https://<your-domain>/api/pathao/webhook
+ *   https://ecom-tau-pearl.vercel.app/api/pathao/webhook
  *
  * Payload shape:
  * {
