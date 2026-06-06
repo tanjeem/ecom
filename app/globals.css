@@ -119,7 +119,7 @@ button {
 
 .nav-item:hover,
 .nav-item.is-active {
-  background: rgba(255, 255, 255, 0.09);
+  background: #2c2f35;
   color: #fff;
 }
 
@@ -162,8 +162,62 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.topbar-title-wrapper {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.topbar h1 {
+  font-size: 1.25rem;
+  font-weight: 850;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.topbar-eyebrow {
+  font-size: 0.62rem;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.topbar .search-field {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  min-width: 200px;
+  width: 220px;
+  font-size: 0.78rem;
+  gap: 6px;
+}
+
+.topbar .search-field input {
+  font-size: 0.78rem;
+}
+
+.topbar .icon-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 6px;
+}
+
+.topbar .primary-action {
+  height: 32px;
+  min-height: 32px;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 0.78rem;
+  gap: 4px;
 }
 
 .eyebrow {
@@ -763,6 +817,12 @@ tbody tr:hover {
 .inventory-grid {
   display: grid;
   gap: 12px;
+  overflow-x: auto;
+}
+
+.inventory-grid table {
+  min-width: 520px;
+  width: 100%;
 }
 
 .sku-row {
@@ -1014,4 +1074,9 @@ tbody tr:hover {
     max-width: 100%;
     overflow-x: auto;
   }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }

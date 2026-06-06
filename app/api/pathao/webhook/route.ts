@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { dashboardCache } from '@/lib/cache';
 
 // The secret Pathao requires us to return in the response header
 // Found in: Pathao dashboard → Webhook Integration → Secret
@@ -107,6 +108,9 @@ export async function POST(request: NextRequest) {
       if (wooOrderId) {
         const updated = await updateWooOrderMeta(wooOrderId, consignmentId, orderStatus);
         console.log(`[Pathao Webhook] WooCommerce order #${wooOrderId} updated to "${orderStatus}" — success: ${updated}`);
+        if (updated) {
+          dashboardCache.clear();
+        }
       } else {
         console.warn(`[Pathao Webhook] Could not find WooCommerce order for consignment ${consignmentId} / merchant_order_id ${merchantOrderId}`);
       }

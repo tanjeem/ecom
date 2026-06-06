@@ -1,82 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getWooOrders } from "@/lib/integrations/woocommerce";
+import { getWooOrdersPage, updateWooOrderStatus } from "@/lib/integrations/woocommerce";
+import type { CommerceOrder } from "@/lib/types/commerce";
 
-const mockOrders = [
-  {
-    id: "#1001",
-    wooId: 1001,
-    source: "WooCommerce",
-    customer: "Ayesha Khan",
-    phone: "01700000001",
-    address: "Gulshan, Dhaka",
-    items: "Black Linen Shirt",
-    payment: "Cash on Delivery",
-    status: "paid",
-    courier: "Pathao",
-    pathaoStatus: "Delivered",
-    pathaoConsignment: "PC-001",
-    payable: 2450,
-    total: 2450,
-    city: "Dhaka",
-    margin: "Pending",
-    notes: "Mock order for testing",
-  },
-  {
-    id: "#1002",
-    wooId: 1002,
-    source: "WooCommerce",
-    customer: "Farah Ahmed",
-    phone: "01700000002",
-    address: "Banani, Dhaka",
-    items: "White Cotton Robe",
-    payment: "Cash on Delivery",
-    status: "packed",
-    courier: "Pathao",
-    pathaoStatus: "Ready",
-    pathaoConsignment: "",
-    payable: 3200,
-    total: 3200,
-    city: "Dhaka",
-    margin: "Pending",
-    notes: "Mock order for testing",
-  },
-  {
-    id: "#1003",
-    wooId: 1003,
-    source: "WooCommerce",
-    customer: "Noor Hassan",
-    phone: "01700000003",
-    address: "Dhanmondi, Dhaka",
-    items: "Navy Chambray Shirt",
-    payment: "Cash on Delivery",
-    status: "hold",
-    courier: "Pathao",
-    pathaoStatus: "Ready",
-    pathaoConsignment: "",
-    payable: 2800,
-    total: 2800,
-    city: "Dhaka",
-    margin: "Pending",
-    notes: "Mock order for testing",
-  },
-];
+const DEFAULT_PER_PAGE = 50;
+
+const PATHAO_DELIVERED = new Set(['Delivered', 'Partial Delivery']);
+const PATHAO_RETURNED  = new Set(['Return', 'Paid Return', 'Returned to Merchant', 'Return Id Created']);
 
 export async function GET(request: NextRequest) {
+  const sp = request.nextUrl.searchParams;
+  const page    = Math.max(1, Number(sp.get("page")    || 1));
+  const perPage = Math.max(1, Number(sp.get("perPage") || DEFAULT_PER_PAGE));
+  const status  = sp.get("status") || undefined;
+
   try {
-    // Try to get real orders from WooCommerce
-    try {
-      const orders = await getWooOrders(request.nextUrl.searchParams);
-      return NextResponse.json({ orders });
-    } catch (error) {
-      // Fall back to mock data
-      console.log("WooCommerce fetch failed, returning mock data:", error);
-      return NextResponse.json({ orders: mockOrders });
+    const { orders, total, totalPages } = await getWooOrdersPage(page, perPage, status);
+
+    // Auto-sync WooCommerce status from cached Pathao status (fire and forget)
+    const toComplete = orders.filter(
+      (o: CommerceOrder) => PATHAO_DELIVERED.has(o.pathaoStatus) && o.status !== "completed",
+    );
+    const toFail = orders.filter(
+      (o: CommerceOrder) => PATHAO_RETURNED.has(o.pathaoStatus) && o.status !== "returned",
+    );
+
+    if (toComplete.length > 0 || toFail.length > 0) {
+      Promise.all([
+        ...toComplete.map((o: CommerceOrder) => updateWooOrderStatus(o.wooId, "completed")),
+        ...toFail.map((o: CommerceOrder)     => updateWooOrderStatus(o.wooId, "failed")),
+      ]).catch((e) => console.warn("Auto-sync Pathao→WooCommerce:", e));
     }
+
+    return NextResponse.json({ orders, total, page, totalPages });
   } catch (error) {
     console.error("Orders API error:", error);
-    return NextResponse.json(
-      { orders: mockOrders },
-      { status: 200 },
-    );
+    return NextResponse.json({ orders: [], total: 0, page, totalPages: 1 }, { status: 500 });
   }
 }

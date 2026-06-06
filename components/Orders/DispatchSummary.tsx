@@ -1,12 +1,13 @@
 import React from 'react';
 
 interface DispatchSummaryProps {
-  selectedCount: number;
-  readyCount: number;
-  totalPayable: number;
-  onSyncWooCommerce: () => void;
-  onBulkSendPathao: () => void;
-  isLoading?: boolean;
+  readonly selectedCount: number;
+  readonly readyCount: number;
+  readonly totalPayable: number;
+  readonly onSyncWooCommerce: () => void;
+  readonly onBulkSendPathao: () => void;
+  readonly isLoading?: boolean;
+  readonly log?: string;
 }
 
 export const DispatchSummary: React.FC<DispatchSummaryProps> = ({
@@ -16,6 +17,7 @@ export const DispatchSummary: React.FC<DispatchSummaryProps> = ({
   onSyncWooCommerce,
   onBulkSendPathao,
   isLoading = false,
+  log = 'Waiting for courier action.',
 }) => {
   return (
     <section className="panel">
@@ -60,7 +62,7 @@ export const DispatchSummary: React.FC<DispatchSummaryProps> = ({
         </button>
       </div>
       <div className="pathao-log" id="pathao-log">
-        Waiting for courier action.
+        {log}
       </div>
     </section>
   );

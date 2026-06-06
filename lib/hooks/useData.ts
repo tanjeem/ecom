@@ -194,54 +194,25 @@ export function useAccountingData() {
 }
 
 export function useAdsData() {
-  const ads = {
-    campaigns: [
-      {
-        name: 'Summer Collection Launch',
-        spend: 5240,
-        revenue: 21850,
-        roas: 4.18,
-        cpa: 18.5,
-      },
-      {
-        name: 'Spring Clearance',
-        spend: 3120,
-        revenue: 9360,
-        roas: 3,
-        cpa: 22.1,
-      },
-      {
-        name: 'Brand Awareness Test',
-        spend: 2100,
-        revenue: 4200,
-        roas: 2,
-        cpa: 42,
-      },
-    ],
-    creatives: [
-      {
-        name: 'Model lifestyle - Beach',
-        impressions: 45200,
-        cpm: 0.89,
-        status: 'hot',
-      },
-      {
-        name: 'Flat lay - New collection',
-        impressions: 32100,
-        cpm: 1.05,
-        status: 'testing',
-      },
-      {
-        name: 'Product demo - 15s',
-        impressions: 18500,
-        cpm: 1.34,
-        status: 'declining',
-      },
-    ],
-  };
+  const [data, setData] = useState<{ campaigns: any[]; creatives: any[] }>({
+    campaigns: [],
+    creatives: [],
+  });
 
-  return ads;
+  useEffect(() => {
+    fetch('/api/ads')
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.campaigns) {
+          setData(json);
+        }
+      })
+      .catch((err) => console.error('Failed to fetch live ads data:', err));
+  }, []);
+
+  return data;
 }
+
 
 export function useScaleOpsData() {
   const scaleOps = {

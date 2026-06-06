@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bulkCreatePathaoOrders } from "@/lib/integrations/pathao";
 import type { CommerceOrder } from "@/lib/types/commerce";
+import { dashboardCache } from "@/lib/cache";
 
 /**
  * POST /api/pathao/bulk
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await bulkCreatePathaoOrders(payload.orders);
+    dashboardCache.clear();
     return NextResponse.json({ result }, { status: 202 });
   } catch (error) {
     return NextResponse.json(

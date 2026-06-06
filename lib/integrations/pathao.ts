@@ -9,6 +9,112 @@ type PathaoTokenResponse = {
   message?: string;
 };
 
+export type PathaoPortalOrder = {
+  order_consignment_id: string;
+  order_created_at: string;
+  order_description: string;
+  merchant_order_id: string;
+  recipient_name: string;
+  recipient_address: string;
+  recipient_phone: string;
+  order_amount: number;
+  total_fee: number;
+  delivery_fee: number;
+  order_status: string;
+  order_status_updated_at: string;
+  order_type: string;
+  item_type: string;
+};
+
+/** Login to Pathao merchant portal (different token audience from Aladdin API) */
+let _portalToken: string | null = null;
+let _portalTokenExpiry = 0;
+
+async function getMerchantPortalToken(): Promise<string> {
+  if (_portalToken && Date.now() < _portalTokenExpiry) return _portalToken;
+  const res = await fetch("https://merchant.pathao.com/api/v1/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      username: process.env.PATHAO_USERNAME,
+      password: process.env.PATHAO_PASSWORD,
+    }),
+    cache: "no-store",
+  });
+  const data = await res.json() as PathaoTokenResponse;
+  if (!res.ok || !data.access_token) {
+    throw new Error(data.message || "Pathao merchant portal login failed");
+  }
+  _portalToken = data.access_token;
+  // Cache for 6 hours (token is valid 90 days but we refresh conservatively)
+  _portalTokenExpiry = Date.now() + 6 * 60 * 60 * 1000;
+  return _portalToken;
+}
+
+/**
+ * Fetch all orders from Pathao merchant portal with date filtering.
+ * Uses the /api/v1/orders/all endpoint which is what their own dashboard uses.
+ * from_date / to_date format: YYYY-MM-DD
+ */
+let _allOrdersCache: PathaoPortalOrder[] | null = null;
+let _allOrdersCacheExpiry = 0;
+const ALL_ORDERS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export async function getPathaoPortalOrders(
+  fromDate?: string,
+  toDate?: string,
+): Promise<PathaoPortalOrder[]> {
+  // When called with no date filter, use in-memory cache to avoid hammering the API
+  if (!fromDate && !toDate) {
+    if (_allOrdersCache && Date.now() < _allOrdersCacheExpiry) {
+      return _allOrdersCache;
+    }
+  }
+
+  const token = await getMerchantPortalToken();
+  const allOrders: PathaoPortalOrder[] = [];
+  let page = 1;
+  const perPage = 100;
+
+  while (true) {
+    const params = new URLSearchParams({ per_page: String(perPage), page: String(page) });
+    if (fromDate) params.set("from_date", fromDate);
+    if (toDate) params.set("to_date", toDate);
+
+    const res = await fetch(
+      `https://merchant.pathao.com/api/v1/orders/all?${params}`,
+      {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        cache: "no-store",
+      }
+    );
+
+    // Handle rate limiting with a brief retry
+    if (res.status === 429) {
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
+    }
+
+    const json = await res.json() as {
+      code: number;
+      data: { data: PathaoPortalOrder[]; total: number; last_page: number; current_page: number };
+    };
+
+    const rows = json.data?.data ?? [];
+    allOrders.push(...rows);
+    if (page >= (json.data?.last_page ?? 1) || rows.length === 0) break;
+    page++;
+  }
+
+  // Cache all-time results
+  if (!fromDate && !toDate) {
+    _allOrdersCache = allOrders;
+    _allOrdersCacheExpiry = Date.now() + ALL_ORDERS_CACHE_TTL;
+  }
+
+  return allOrders;
+}
+
 type PathaoCreateResponse = {
   message: string;
   type: string;
@@ -43,7 +149,12 @@ function getPathaoBaseURL() {
   return url.replace(/\/$/, "");
 }
 
-async function getPathaoToken() {
+let _aladdinToken: string | null = null;
+let _aladdinTokenExpiry = 0;
+
+async function getPathaoToken(): Promise<string> {
+  if (_aladdinToken && Date.now() < _aladdinTokenExpiry) return _aladdinToken;
+
   if (!hasEnv(requiredPathaoEnv)) {
     throw new Error("Pathao credentials are not configured");
   }
@@ -58,10 +169,7 @@ async function getPathaoToken() {
 
   const response = await fetch(`${getPathaoBaseURL()}/aladdin/api/v1/issue-token`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
     cache: "no-store",
   });
@@ -70,10 +178,12 @@ async function getPathaoToken() {
   if (!response.ok) {
     throw new Error(data.message || `Pathao token request failed with ${response.status}`);
   }
+  if (!data.access_token) throw new Error("Pathao token response did not include an access token");
 
-  const token = data.access_token;
-  if (!token) throw new Error("Pathao token response did not include an access token");
-  return token;
+  _aladdinToken = data.access_token;
+  // expires_in is in seconds; refresh 5 minutes before expiry
+  _aladdinTokenExpiry = Date.now() + ((data.expires_in ?? 3600) - 300) * 1000;
+  return _aladdinToken;
 }
 
 export async function pathaoFetch<T>(endpoint: string, options: RequestInit = {}) {
@@ -97,17 +207,103 @@ export async function pathaoFetch<T>(endpoint: string, options: RequestInit = {}
   return data as T;
 }
 
+// ── Default city resolution (cached) ─────────────────────────────────────────
+
+let _defaultCityId = 0;
+
+/**
+ * Returns the merchant's delivery city ID.
+ * Priority: PATHAO_DEFAULT_CITY_ID env var → merchant's store city → Dhaka (1)
+ */
+async function getDefaultCityId(): Promise<number> {
+  const envCity = Number(process.env.PATHAO_DEFAULT_CITY_ID || 0);
+  if (envCity) return envCity;
+  if (_defaultCityId) return _defaultCityId;
+
+  try {
+    const { stores } = await getPathaoStores();
+    const store = stores.find((s) => s.isDefaultStore) ?? stores[0];
+    if (store?.cityId) { _defaultCityId = store.cityId; return _defaultCityId; }
+  } catch { /* fall through */ }
+
+  _defaultCityId = 1; // Dhaka
+  return _defaultCityId;
+}
+
+// Zones cache: cityId → zone list (1-hour TTL)
+const _zonesByCityCache = new Map<number, { zones: Array<{ zoneId: number; zoneName: string }>; expiry: number }>();
+const ZONE_CACHE_TTL = 60 * 60 * 1000;
+
+async function getCachedZones(cityId: number): Promise<Array<{ zoneId: number; zoneName: string }>> {
+  const cached = _zonesByCityCache.get(cityId);
+  if (cached && Date.now() < cached.expiry) return cached.zones;
+  const { zones } = await getPathaoZones(cityId);
+  _zonesByCityCache.set(cityId, { zones, expiry: Date.now() + ZONE_CACHE_TTL });
+  return zones;
+}
+
+/**
+ * Resolve zone ID for an order by matching zone names against the delivery address.
+ * Falls back to PATHAO_DEFAULT_ZONE_ID env var or the first zone in the city.
+ */
+async function resolveZoneForAddress(cityId: number, address: string): Promise<number> {
+  const envZone = Number(process.env.PATHAO_DEFAULT_ZONE_ID || 0);
+  if (envZone) return envZone;
+
+  const zones = await getCachedZones(cityId);
+  if (zones.length === 0) return 298;
+
+  const needle = address.toLowerCase();
+
+  // Exact word-boundary match first (e.g. "Dhanmondi" in "Road 6, Dhanmondi, Dhaka")
+  for (const z of zones) {
+    const zn = z.zoneName.toLowerCase();
+    const escaped = zn.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+    const pattern = new RegExp(String.raw`(?:^|[^a-z])` + escaped + String.raw`(?:[^a-z]|$)`);
+    if (pattern.test(needle)) return z.zoneId;
+  }
+
+  // Substring fallback
+  for (const z of zones) {
+    if (needle.includes(z.zoneName.toLowerCase())) return z.zoneId;
+  }
+
+  return zones[0].zoneId;
+}
+
+// ── Phone format ──────────────────────────────────────────────────────────────
+
+/**
+ * Normalize a Bangladesh phone number to local 01XXXXXXXXX format (11 digits).
+ * WooCommerce often stores the number with +880 country code prefix.
+ */
+function formatBDPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('880') && digits.length === 13) return digits.slice(2); // +8801XXXXXXXXX
+  if (digits.startsWith('88') && digits.length === 12) return '0' + digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('01')) return digits;
+  if (digits.length === 10) return '0' + digits;
+  return digits.slice(-11); // fallback: take last 11 digits
+}
+
+// ── Order creation ─────────────────────────────────────────────────────────────
+
 /**
  * Create a single order in Pathao
  * POST /aladdin/api/v1/orders
  */
 export async function createPathaoOrder(order: CommerceOrder) {
+  const cityId = await getDefaultCityId();
+  const zoneId = await resolveZoneForAddress(cityId, order.address);
+
   const body = {
     store_id: Number(process.env.PATHAO_STORE_ID),
     merchant_order_id: String(order.wooId || order.id),
     recipient_name: order.customer,
-    recipient_phone: order.phone,
+    recipient_phone: formatBDPhone(order.phone),
     recipient_address: order.address,
+    recipient_city: cityId,
+    recipient_zone: zoneId,
     delivery_type: Number(process.env.PATHAO_DELIVERY_TYPE || 48),
     item_type: Number(process.env.PATHAO_ITEM_TYPE || 2),
     special_instruction: order.notes || "",
@@ -256,20 +452,28 @@ export async function getPathaoAreas(zoneId: number) {
  * Creates multiple Pathao orders in bulk
  */
 export async function bulkCreatePathaoOrders(orders: CommerceOrder[]) {
+  // Resolve city once; resolve zone per-order based on address
+  const cityId = await getDefaultCityId();
+
   const payload = {
-    orders: orders.map((order) => ({
-      store_id: Number(process.env.PATHAO_STORE_ID),
-      merchant_order_id: String(order.wooId || order.id),
-      recipient_name: order.customer,
-      recipient_phone: order.phone,
-      recipient_address: order.address,
-      delivery_type: Number(process.env.PATHAO_DELIVERY_TYPE || 48),
-      item_type: Number(process.env.PATHAO_ITEM_TYPE || 2),
-      special_instruction: order.notes || "",
-      item_quantity: 1,
-      item_weight: Number(process.env.PATHAO_ITEM_WEIGHT || 0.5),
-      item_description: Array.isArray(order.items) ? order.items.join(", ") : String(order.items || ""),
-      amount_to_collect: Number(order.payable || order.total || 0),
+    orders: await Promise.all(orders.map(async (order) => {
+      const zoneId = await resolveZoneForAddress(cityId, order.address);
+      return {
+        store_id: Number(process.env.PATHAO_STORE_ID),
+        merchant_order_id: String(order.wooId || order.id),
+        recipient_name: order.customer,
+        recipient_phone: formatBDPhone(order.phone),
+        recipient_address: order.address,
+        recipient_city: cityId,
+        recipient_zone: zoneId,
+        delivery_type: Number(process.env.PATHAO_DELIVERY_TYPE || 48),
+        item_type: Number(process.env.PATHAO_ITEM_TYPE || 2),
+        special_instruction: order.notes || "",
+        item_quantity: 1,
+        item_weight: Number(process.env.PATHAO_ITEM_WEIGHT || 0.5),
+        item_description: Array.isArray(order.items) ? order.items.join(", ") : String(order.items || ""),
+        amount_to_collect: Number(order.payable || order.total || 0),
+      };
     })),
   };
 

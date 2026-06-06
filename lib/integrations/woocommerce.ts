@@ -76,10 +76,15 @@ function splitName(name: string) {
   };
 }
 
-function normalizeStatus(status: string): OrderStatus {
-  if (["processing", "completed"].includes(status)) return "paid";
-  if (status === "on-hold") return "hold";
-  if (status === "refunded") return "returned";
+function normalizeStatus(wooStatus: string, threadopsStatus?: string): OrderStatus {
+  // _threadops_status meta takes priority (used for "packed" which has no WooCommerce equivalent)
+  if (threadopsStatus === "packed") return "packed";
+  if (threadopsStatus === "hold") return "hold";
+  if (threadopsStatus === "returned") return "returned";
+  if (wooStatus === "on-hold") return "hold";
+  if (wooStatus === "refunded" || wooStatus === "cancelled") return "returned";
+  if (wooStatus === "completed") return "completed";
+  if (wooStatus === "processing" || wooStatus === "pending") return "paid";
   return "paid";
 }
 
@@ -105,12 +110,13 @@ export function normalizeWooOrder(order: WooOrder): CommerceOrder {
       meta.product_text ||
       "Order item",
     payment: order.payment_method_title || order.payment_method || "Unknown",
-    status: normalizeStatus(order.status),
+    status: normalizeStatus(order.status, meta._threadops_status),
     courier: "Pathao",
     pathaoStatus: meta.ptc_status || meta.pathao_status || "Not Booked",
     pathaoConsignment: meta.ptc_consignment_id || meta.pathao_consignment_id || "",
     payable: Number(meta.pathao_payable || order.total || 0),
     total: Number(order.total || 0),
+    deliveryFee: Number(meta.pathao_delivery_fee || 0) || undefined,
     city: shipping.city || billing.city || "",
     margin: "Pending",
     notes: order.customer_note || "Synced from WooCommerce.",
@@ -118,38 +124,98 @@ export function normalizeWooOrder(order: WooOrder): CommerceOrder {
   };
 }
 
-export async function getWooOrders(searchParams: URLSearchParams) {
-  // Return mock data if WooCommerce is not configured
+/**
+ * Fetch a single page of WooCommerce orders with total count metadata.
+ * Used for the paginated Orders view.
+ */
+export async function getWooOrdersPage(
+  page: number,
+  perPage: number,
+  status?: string,
+): Promise<{ orders: CommerceOrder[]; total: number; totalPages: number }> {
   if (!hasEnv(requiredWooEnv)) {
-    return getMockOrders();
+    return { orders: getMockOrders(), total: 3, totalPages: 1 };
   }
+
+  const auth = Buffer.from(
+    `${process.env.WOOCOMMERCE_CONSUMER_KEY}:${process.env.WOOCOMMERCE_CONSUMER_SECRET}`,
+  ).toString("base64");
+
+  const params = new URLSearchParams({
+    per_page: String(perPage),
+    page: String(page),
+    orderby: "date",
+    order: "desc",
+  });
+  if (status) params.set("status", status);
+
+  const response = await fetch(`${getWooBaseURL()}/wp-json/wc/v3/orders?${params}`, {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  const total = Number(response.headers.get("X-WP-Total") || 0);
+  const totalPages = Number(response.headers.get("X-WP-TotalPages") || 1);
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : [];
+
+  if (!response.ok) {
+    throw new Error(data?.message || `WooCommerce request failed with ${response.status}`);
+  }
+
+  const orders = Array.isArray(data) ? data.map(normalizeWooOrder) : getMockOrders();
+  return { orders, total, totalPages };
+}
+
+/**
+ * Fetch WooCommerce orders.
+ * By default returns only the first page (100 newest) for fast UI rendering.
+ * Pass paginate:true only when you need the full dataset (e.g. reporting/metrics).
+ */
+export async function getWooOrders(
+  searchParams: URLSearchParams,
+  opts: { paginate?: boolean; perPage?: number } = {},
+) {
+  if (!hasEnv(requiredWooEnv)) return getMockOrders();
+
+  const perPage = opts.perPage ?? 100;
 
   try {
     const status = searchParams.get("status");
-    const after = searchParams.get("after");
+    const after  = searchParams.get("after");
     const before = searchParams.get("before");
 
-    // Paginate through all results (WooCommerce max per_page is 100)
+    const baseQuery = new URLSearchParams({
+      per_page: String(perPage),
+      orderby: "date",
+      order: "desc",
+    });
+    if (status) baseQuery.set("status", status);
+    if (after)  baseQuery.set("after",  after);
+    if (before) baseQuery.set("before", before);
+
+    if (!opts.paginate) {
+      // Fast path: single request, newest orders only
+      baseQuery.set("page", "1");
+      const orders = await wooFetch<WooOrder[]>(`/orders?${baseQuery}`);
+      return Array.isArray(orders) ? orders.map(normalizeWooOrder) : getMockOrders();
+    }
+
+    // Full pagination (used by metrics/reporting)
     const allOrders: WooOrder[] = [];
     let page = 1;
     while (true) {
-      const query = new URLSearchParams({
-        per_page: "100",
-        page: String(page),
-        orderby: "date",
-        order: "desc",
-      });
-      if (status) query.set("status", status);
-      if (after) query.set("after", after);
-      if (before) query.set("before", before);
-
-      const batch = await wooFetch<WooOrder[]>(`/orders?${query.toString()}`);
+      baseQuery.set("page", String(page));
+      const batch = await wooFetch<WooOrder[]>(`/orders?${baseQuery}`);
       if (!Array.isArray(batch) || batch.length === 0) break;
       allOrders.push(...batch);
-      if (batch.length < 100) break; // last page
+      if (batch.length < perPage) break;
       page++;
     }
-
     return allOrders.map(normalizeWooOrder);
   } catch (error) {
     console.warn("Failed to fetch from WooCommerce, returning mock data:", error);
@@ -220,27 +286,42 @@ function getMockOrders(): CommerceOrder[] {
 }
 
 export async function createInboxWooOrder(payload: InboxOrderInput) {
-  const name = String(payload.name || "").trim();
-  const phone = String(payload.phone || "").trim();
+  const name    = String(payload.name    || "").trim();
+  const phone   = String(payload.phone   || "").trim();
   const address = String(payload.address || "").trim();
-  const product = String(payload.product || "").trim();
-  const price = Number(payload.price || 0);
+  const price   = Number(payload.price   || 0);
 
-  if (!name || !phone || !address || !product || !price) {
+  // Support multi-item orders passed as `items` array; fall back to legacy single-product fields
+  const lines: Array<{ product: string; productId?: number; variationId?: number; qty: number; price: number }> =
+    payload.items?.length
+      ? payload.items.map((i) => ({ product: i.product, productId: i.productId, variationId: i.variationId, qty: i.qty, price: i.price }))
+      : [{ product: String(payload.product || "").trim(), productId: payload.productId, variationId: payload.variationId, qty: Number(payload.quantity || 1), price }];
+
+  const totalPrice     = lines.reduce((s, l) => s + l.price * l.qty, 0);
+  const productText    = lines.map((l) => l.product).join(", ");
+  const deliveryCharge = Number(payload.deliveryCharge || 0);
+  const codPayable     = totalPrice + deliveryCharge;
+
+  if (!name || !phone || !address || !productText || !totalPrice) {
     throw new Error("Name, phone, address, product, and price are required");
   }
 
   const { firstName, lastName } = splitName(name);
   const city = String(payload.city || address.split(",").at(-1) || "").trim();
-  const lineItems = payload.productId
-    ? [
-        {
-          product_id: Number(payload.productId),
-          variation_id: payload.variationId ? Number(payload.variationId) : undefined,
-          quantity: Number(payload.quantity || 1),
-        },
-      ]
+
+  // Use line_items for products with WooCommerce IDs; fall back to fee_lines for free-text items
+  const hasWooIds = lines.every((l) => l.productId);
+  const lineItems = hasWooIds
+    ? lines.map((l) => ({
+        product_id: Number(l.productId),
+        variation_id: l.variationId ? Number(l.variationId) : undefined,
+        quantity: l.qty,
+      }))
     : undefined;
+
+  const feeLines = hasWooIds
+    ? undefined
+    : lines.map((l) => ({ name: l.product, total: String(l.price * l.qty) }));
 
   const created = await wooFetch<WooOrder>("/orders", {
     method: "POST",
@@ -249,40 +330,74 @@ export async function createInboxWooOrder(payload: InboxOrderInput) {
       payment_method_title: "Cash on delivery",
       set_paid: false,
       status: "processing",
-      billing: {
-        first_name: firstName,
-        last_name: lastName,
-        phone,
-        address_1: address,
-        city,
-        country: "BD",
-      },
-      shipping: {
-        first_name: firstName,
-        last_name: lastName,
-        address_1: address,
-        city,
-        country: "BD",
-      },
+      billing:  { first_name: firstName, last_name: lastName, phone, address_1: address, city, country: "BD" },
+      shipping: { first_name: firstName, last_name: lastName, address_1: address, city, country: "BD" },
       line_items: lineItems,
-      fee_lines: lineItems
-        ? undefined
-        : [
-            {
-              name: product,
-              total: String(price),
-            },
-          ],
+      fee_lines:  feeLines,
       meta_data: [
         { key: "_threadops_source", value: "Inbox -> Woo" },
-        { key: "customer_phone", value: phone },
+        { key: "customer_phone",   value: phone },
         { key: "customer_address", value: address },
-        { key: "product_text", value: product },
-        { key: "pathao_status", value: "Ready" },
-        { key: "pathao_payable", value: String(price) },
+        { key: "product_text",     value: productText },
+        { key: "pathao_status",    value: "Ready" },
+        { key: "pathao_payable",   value: String(codPayable) },
+        ...(deliveryCharge > 0 ? [{ key: "pathao_delivery_fee", value: String(deliveryCharge) }] : []),
       ],
     }),
   });
 
   return normalizeWooOrder(created);
+}
+
+/**
+ * Write Pathao consignment ID and status back to a WooCommerce order's meta.
+ * Called immediately after a successful Pathao booking so the order shows
+ * the live consignment ID on next load without waiting for a webhook.
+ */
+export async function updateWooOrderPathaoMeta(
+  wooId: number,
+  consignmentId: string,
+  pathaoStatus: string,
+  deliveryFee?: number,
+): Promise<void> {
+  if (!hasEnv(requiredWooEnv)) return;
+  try {
+    const auth = Buffer.from(
+      `${process.env.WOOCOMMERCE_CONSUMER_KEY}:${process.env.WOOCOMMERCE_CONSUMER_SECRET}`,
+    ).toString("base64");
+    const meta: Array<{ key: string; value: string }> = [
+      { key: "ptc_consignment_id", value: consignmentId },
+      { key: "ptc_status",         value: pathaoStatus  },
+    ];
+    if (deliveryFee != null) meta.push({ key: "pathao_delivery_fee", value: String(deliveryFee) });
+    await fetch(`${getWooBaseURL()}/wp-json/wc/v3/orders/${wooId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ meta_data: meta }),
+      cache: "no-store",
+    });
+  } catch (e) {
+    console.warn(`updateWooOrderPathaoMeta(${wooId}):`, e);
+  }
+}
+
+export async function updateWooOrderStatus(wooId: number, status: string): Promise<void> {
+  if (!hasEnv(requiredWooEnv)) return;
+  try {
+    const auth = Buffer.from(
+      `${process.env.WOOCOMMERCE_CONSUMER_KEY}:${process.env.WOOCOMMERCE_CONSUMER_SECRET}`,
+    ).toString("base64");
+    await fetch(`${getWooBaseURL()}/wp-json/wc/v3/orders/${wooId}`, {
+      method: "PUT",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ status }),
+      cache: "no-store",
+    });
+  } catch (e) {
+    console.warn(`updateWooOrderStatus(${wooId}, ${status}):`, e);
+  }
 }
