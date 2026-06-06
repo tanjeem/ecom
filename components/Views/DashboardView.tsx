@@ -557,11 +557,13 @@ export const DashboardView: React.FC = () => {
         </Panel>
 
         {/* Stock Alerts Panel on the Right */}
-        <Panel title="Stock Alerts" subtitle="Low inventory variant warning levels" style={premiumPanelStyle}>
+        <Panel title="Stock Alerts" subtitle="Low inventory variant warning levels" style={{ ...premiumPanelStyle, height: '100%' }}>
           {stockLoading ? (
             <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>Scanning variants...</div>
           ) : (
-            <div style={{ marginTop: 4 }}><StockAlerts alerts={lowStock} /></div>
+            <div style={{ marginTop: 4, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <StockAlerts alerts={lowStock} />
+            </div>
           )}
         </Panel>
       </div>

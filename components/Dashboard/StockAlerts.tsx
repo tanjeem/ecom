@@ -14,7 +14,7 @@ interface StockAlertsProps {
 
 export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
   return (
-    <div className="alert-list" id="stock-alerts" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="alert-list" id="stock-alerts" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {alerts.length === 0 ? (
         <div style={{
           display: 'flex',
@@ -36,7 +36,7 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
           </span>
         </div>
       ) : (
-        <div style={{ maxHeight: 200, overflowY: 'auto', paddingRight: 4 }}>
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, minHeight: 0 }}>
           {alerts.map((alert) => (
             <div
               key={alert.sku}
@@ -44,31 +44,31 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '10px 12px',
-                marginBottom: 6,
+                padding: '6px 10px',
+                marginBottom: 4,
                 backgroundColor: '#fff5f5',
                 border: '1px solid #fee2e2',
                 borderLeft: '4px solid #ef4444',
                 borderRadius: 6,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <div style={{
                   display: 'grid',
                   placeItems: 'center',
-                  width: 32,
-                  height: 32,
+                  width: 26,
+                  height: 26,
                   borderRadius: 6,
                   backgroundColor: '#fee2e2',
                   color: '#ef4444',
                   flexShrink: 0,
                 }}>
-                  <AlertTriangle size={16} strokeWidth={2.5} />
+                  <AlertTriangle size={13} strokeWidth={2.5} />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <strong style={{
                     display: 'block',
-                    fontSize: '0.82rem',
+                    fontSize: '0.8rem',
                     color: '#1e293b',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
@@ -76,20 +76,17 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
                   }}>
                     {alert.product}
                   </strong>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                    SKU: {alert.sku}
-                  </span>
                 </div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                 <span style={{
-                  fontSize: '0.85rem',
+                  fontSize: '0.8rem',
                   fontWeight: 800,
                   color: '#b91c1c',
                 }}>
                   {alert.current}
                 </span>
-                <span style={{ fontSize: '0.7rem', color: '#64748b', marginLeft: 2 }}>
+                <span style={{ fontSize: '0.68rem', color: '#64748b', marginLeft: 2 }}>
                   / {alert.reorderPoint} left
                 </span>
               </div>
