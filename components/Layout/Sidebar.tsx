@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, PackageCheck, Boxes, Landmark, Megaphone, Workflow } from 'lucide-react';
+import { LayoutDashboard, PackageCheck, Boxes, Landmark, Megaphone, Workflow, Coins } from 'lucide-react';
 
 interface SidebarProps {
   activeView: string;
@@ -12,6 +12,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate }) => {
     { id: 'orders', label: 'Orders', icon: PackageCheck },
     { id: 'inventory', label: 'Inventory', icon: Boxes },
     { id: 'accounting', label: 'Accounting', icon: Landmark },
+    { id: 'finance', label: 'Finance', icon: Coins },
     { id: 'ads', label: 'Meta Ads', icon: Megaphone },
     { id: 'scale', label: 'Scale Ops', icon: Workflow },
   ];

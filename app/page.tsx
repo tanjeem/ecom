@@ -10,8 +10,9 @@ import { InventoryView } from '@/components/Views/InventoryView';
 import { AccountingView } from '@/components/Views/AccountingView';
 import { AdsView } from '@/components/Views/AdsView';
 import { ScaleOpsView } from '@/components/Views/ScaleOpsView';
+import { FinanceView } from '@/components/Views/FinanceView';
 
-type ViewType = 'dashboard' | 'orders' | 'inventory' | 'accounting' | 'ads' | 'scale';
+type ViewType = 'dashboard' | 'orders' | 'inventory' | 'accounting' | 'ads' | 'scale' | 'finance';
 
 const viewTitles: Record<ViewType, string> = {
   dashboard: 'Dashboard',
@@ -20,6 +21,7 @@ const viewTitles: Record<ViewType, string> = {
   accounting: 'Accounting',
   ads: 'Meta Ads',
   scale: 'Scale Ops',
+  finance: 'Finance Center',
 };
 
 const viewComponents: Record<ViewType, React.ComponentType> = {
@@ -29,6 +31,7 @@ const viewComponents: Record<ViewType, React.ComponentType> = {
   accounting: AccountingView,
   ads: AdsView,
   scale: ScaleOpsView,
+  finance: FinanceView,
 };
 
 export default function Home() {
