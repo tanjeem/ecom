@@ -113,6 +113,103 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case "addFabricPurchase": {
+        if (!ledger.fabricPurchases) ledger.fabricPurchases = [];
+        const newPurchase = {
+          id: "fp_" + generateId(),
+          date: payload.date || new Date().toISOString().slice(0, 10),
+          vendor: payload.vendor || "",
+          fabricType: payload.fabricType || "",
+          quantity: Number(payload.quantity) || 0,
+          unit: payload.unit || "yards",
+          unitPrice: Number(payload.unitPrice) || 0,
+          totalCost: Number(payload.totalCost) || 0,
+          amountPaid: Number(payload.amountPaid) || 0,
+          balanceDue: (Number(payload.totalCost) || 0) - (Number(payload.amountPaid) || 0),
+          status: payload.status || "Received",
+          notes: payload.notes || ""
+        };
+        ledger.fabricPurchases.unshift(newPurchase);
+        break;
+      }
+
+      case "addAccessoryPurchase": {
+        if (!ledger.accessoryPurchases) ledger.accessoryPurchases = [];
+        const newPurchase = {
+          id: "ap_" + generateId(),
+          date: payload.date || new Date().toISOString().slice(0, 10),
+          vendor: payload.vendor || "",
+          item: payload.item || "",
+          quantity: Number(payload.quantity) || 0,
+          totalCost: Number(payload.totalCost) || 0,
+          amountPaid: Number(payload.amountPaid) || 0,
+          balanceDue: (Number(payload.totalCost) || 0) - (Number(payload.amountPaid) || 0),
+          notes: payload.notes || ""
+        };
+        ledger.accessoryPurchases.unshift(newPurchase);
+        break;
+      }
+
+      case "startProductionBatch": {
+        if (!ledger.productionBatches) ledger.productionBatches = [];
+        const newBatch = {
+          id: "pb_" + generateId(),
+          date: payload.date || new Date().toISOString().slice(0, 10),
+          productType: payload.productType || "",
+          targetQuantity: Number(payload.targetQuantity) || 0,
+          factory: payload.factory || "",
+          estimatedSewingCost: Number(payload.estimatedSewingCost) || 0,
+          status: "In Progress",
+          materialsAllocated: payload.materialsAllocated || []
+        };
+        ledger.productionBatches.unshift(newBatch);
+        break;
+      }
+
+      case "completeProductionBatch": {
+        if (!ledger.productionBatches) ledger.productionBatches = [];
+        const batch = ledger.productionBatches.find((b: any) => b.id === payload.id);
+        if (batch) {
+          batch.status = "Completed";
+          batch.completedQuantity = Number(payload.completedQuantity) || batch.targetQuantity;
+          batch.actualSewingCost = Number(payload.actualSewingCost) || batch.estimatedSewingCost;
+          batch.completionDate = payload.completionDate || new Date().toISOString().slice(0, 10);
+        } else {
+          return NextResponse.json({ error: `Production batch ID ${payload.id} not found` }, { status: 404 });
+        }
+        break;
+      }
+
+      case "postVendorPayment": {
+        if (!ledger.vendorPayments) ledger.vendorPayments = [];
+        const newPayment = {
+          id: "vp_" + generateId(),
+          date: payload.date || new Date().toISOString().slice(0, 10),
+          vendor: payload.vendor || "",
+          amount: Number(payload.amount) || 0,
+          paymentMethod: payload.paymentMethod || "Bank Transfer",
+          referenceId: payload.referenceId || "",
+          notes: payload.notes || ""
+        };
+        ledger.vendorPayments.unshift(newPayment);
+        break;
+      }
+
+      case "addOpex": {
+        if (!ledger.opex) ledger.opex = [];
+        const newOpex = {
+          id: "ox_" + generateId(),
+          date: payload.date || new Date().toISOString().slice(0, 10),
+          category: payload.category || "",
+          description: payload.description || "",
+          amount: Number(payload.amount) || 0,
+          paymentMethod: payload.paymentMethod || "Cash",
+          receiptUrl: payload.receiptUrl || ""
+        };
+        ledger.opex.unshift(newOpex);
+        break;
+      }
+
       default:
         return NextResponse.json({ error: `Unsupported action: ${action}` }, { status: 400 });
     }

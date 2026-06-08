@@ -1,0 +1,53 @@
+import { NextResponse } from 'next/server';
+import { getPathaoPortalOrders } from '@/lib/integrations/pathao';
+
+const DELIVERED = new Set(['Delivered', 'Partial Delivery']);
+const RETURNED  = new Set(['Return', 'Returned to Merchant', 'Returned To Merchant', 'Return In Transit', 'Paid Return']);
+
+export async function GET() {
+  try {
+    const now = new Date();
+    // Fetch all orders without date params (uses 5-min in-memory cache), then
+    // bucket in memory — same pattern as the metrics route which correctly returns
+    // Jan/Feb data. Passing dates to the portal API filters by a different field
+    // and misses older orders.
+    const orders = await getPathaoPortalOrders();
+
+    const buckets: Record<string, {
+      delivered: number; deliveredCount: number;
+      returned: number; returnedCount: number;
+    }> = {};
+
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      buckets[key] = { delivered: 0, deliveredCount: 0, returned: 0, returnedCount: 0 };
+    }
+
+    for (const order of orders) {
+      const month = order.order_created_at?.slice(0, 7);
+      if (!month || !buckets[month]) continue;
+      const amount = order.order_amount || 0;
+      if (DELIVERED.has(order.order_status)) {
+        buckets[month].delivered += amount;
+        buckets[month].deliveredCount++;
+      } else if (RETURNED.has(order.order_status)) {
+        buckets[month].returned += amount;
+        buckets[month].returnedCount++;
+      }
+    }
+
+    const months = Object.entries(buckets).map(([month, data]) => {
+      const d = new Date(month + '-15');
+      return {
+        month,
+        label: d.toLocaleString('default', { month: 'short' }),
+        ...data,
+      };
+    });
+
+    return NextResponse.json({ months });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dashboardCache } from '@/lib/cache';
+import { AccountingEngine } from '@/lib/services/AccountingEngine';
 
 // The secret Pathao requires us to return in the response header
 // Found in: Pathao dashboard → Webhook Integration → Secret
@@ -108,6 +109,25 @@ export async function POST(request: NextRequest) {
       if (wooOrderId) {
         const updated = await updateWooOrderMeta(wooOrderId, consignmentId, orderStatus);
         console.log(`[Pathao Webhook] WooCommerce order #${wooOrderId} updated to "${orderStatus}" — success: ${updated}`);
+        
+        // Zero-Leakage Accounting State Machine Hook
+        try {
+          const orderValue = typeof body.collected_amount === 'number' ? body.collected_amount : 0;
+          const fees = typeof body.delivery_charge === 'number' ? body.delivery_charge : 0;
+          // In a full integration, landedCogs would be fetched from Woo order line items cross-referenced with Supabase master_products
+          const landedCogs = 0; 
+          
+          await AccountingEngine.handleCourierWebhook(
+            wooOrderId.toString(),
+            orderStatus.toLowerCase(),
+            orderValue,
+            fees,
+            landedCogs
+          );
+        } catch (accErr) {
+          console.error('[Pathao Webhook] AccountingEngine Error:', accErr);
+        }
+
         if (updated) {
           dashboardCache.clear();
         }
