@@ -64,8 +64,10 @@ export async function getPathaoPortalOrders(
   fromDate?: string,
   toDate?: string,
 ): Promise<PathaoPortalOrder[]> {
+  const isDefaultQuery = !fromDate && !toDate;
+
   // When called with no date filter, use in-memory cache to avoid hammering the API
-  if (!fromDate && !toDate) {
+  if (isDefaultQuery) {
     if (_allOrdersCache && Date.now() < _allOrdersCacheExpiry) {
       return _allOrdersCache;
     }
@@ -75,6 +77,8 @@ export async function getPathaoPortalOrders(
   const allOrders: PathaoPortalOrder[] = [];
   let page = 1;
   const perPage = 100;
+  let retryCount = 0;
+  const MAX_RETRIES = 3;
 
   while (true) {
     const params = new URLSearchParams({ per_page: String(perPage), page: String(page) });
@@ -91,9 +95,17 @@ export async function getPathaoPortalOrders(
 
     // Handle rate limiting with a brief retry
     if (res.status === 429) {
+      if (retryCount >= MAX_RETRIES) {
+        console.warn(`[Pathao] Rate limit exceeded after ${MAX_RETRIES} retries. Returning partial orders.`);
+        break;
+      }
+      retryCount++;
       await new Promise(r => setTimeout(r, 2000));
       continue;
     }
+    
+    // Reset retry count on success
+    retryCount = 0;
 
     const json = await res.json() as {
       code: number;
@@ -107,7 +119,7 @@ export async function getPathaoPortalOrders(
   }
 
   // Cache all-time results
-  if (!fromDate && !toDate) {
+  if (isDefaultQuery) {
     _allOrdersCache = allOrders;
     _allOrdersCacheExpiry = Date.now() + ALL_ORDERS_CACHE_TTL;
   }

@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server';
 import { getPathaoPortalOrders } from '@/lib/integrations/pathao';
 
+import { dashboardCache } from '@/lib/cache';
+
+export const dynamic = 'force-dynamic';
+
 const DELIVERED = new Set(['Delivered', 'Partial Delivery']);
 const RETURNED  = new Set(['Return', 'Returned to Merchant', 'Returned To Merchant', 'Return In Transit', 'Paid Return']);
 
 export async function GET() {
+  const cacheKey = 'pathao_monthly_data';
+  const cached = dashboardCache.get<any>(cacheKey);
+  if (cached) {
+    console.log(`[Cache] Serving pathao monthly from cache`);
+    return NextResponse.json(cached);
+  }
+
   try {
     const now = new Date();
     // Fetch all orders without date params (uses 5-min in-memory cache), then
@@ -46,7 +57,9 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ months });
+    const responseData = { months };
+    dashboardCache.set(cacheKey, responseData, 10 * 60 * 1000); // 10 minutes cache
+    return NextResponse.json(responseData);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

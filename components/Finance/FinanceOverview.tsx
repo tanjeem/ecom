@@ -189,7 +189,8 @@ export const FinanceOverview: React.FC = () => {
   const mergedTrend = trend.map(t => {
     const monthKey = `${now.getFullYear()}-${String(t.month).padStart(2, '0')}`;
     const pathaoM = pathaoMonths.find(pm => pm.month === monthKey);
-    return { month: t.month, revenue: pathaoM?.delivered || 0, expenses: t.expenses };
+    // Use Pathao delivered COD value. If 0 or absent, fallback to manual ledger revenue
+    return { month: t.month, revenue: pathaoM?.delivered || t.revenue, expenses: t.expenses };
   });
   const trendHasData = mergedTrend.some(t => t.revenue > 0 || t.expenses > 0);
 
