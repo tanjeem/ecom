@@ -1,15 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
-import { LayoutDashboard, ArrowLeftRight, Package, Building2, BarChart2, Repeat2 } from 'lucide-react';
+import { LayoutDashboard, ArrowLeftRight, Package, Building2, BarChart2, Repeat2, Megaphone } from 'lucide-react';
 import { FinanceOverview } from '@/components/Finance/FinanceOverview';
 import { FinanceTransactions } from '@/components/Finance/FinanceTransactions';
 import { FinanceProcurement } from '@/components/Finance/FinanceProcurement';
 import { FinanceVendors } from '@/components/Finance/FinanceVendors';
 import { FinanceReports } from '@/components/Finance/FinanceReports';
 import { FinanceFixedCosts } from '@/components/Finance/FinanceFixedCosts';
+import { FinanceAds } from '@/components/Finance/FinanceAds';
 
-type Tab = 'overview' | 'transactions' | 'procurement' | 'vendors' | 'reports' | 'fixed-costs';
+type Tab = 'overview' | 'transactions' | 'procurement' | 'vendors' | 'reports' | 'fixed-costs' | 'ads';
 
 const TABS: { id: Tab; label: string; icon: React.FC<any> }[] = [
   { id: 'overview',      label: 'Overview',      icon: LayoutDashboard },
@@ -17,6 +18,7 @@ const TABS: { id: Tab; label: string; icon: React.FC<any> }[] = [
   { id: 'fixed-costs',   label: 'Fixed Costs',   icon: Repeat2 },
   { id: 'procurement',   label: 'Procurement',   icon: Package },
   { id: 'vendors',       label: 'Vendors',       icon: Building2 },
+  { id: 'ads',           label: 'Facebook Ads',  icon: Megaphone },
   { id: 'reports',       label: 'P&L Reports',   icon: BarChart2 },
 ];
 
@@ -60,6 +62,7 @@ export const FinanceView: React.FC = () => {
       {activeTab === 'fixed-costs'  && <FinanceFixedCosts />}
       {activeTab === 'procurement'  && <FinanceProcurement />}
       {activeTab === 'vendors'      && <FinanceVendors />}
+      {activeTab === 'ads'          && <FinanceAds />}
       {activeTab === 'reports'      && <FinanceReports />}
     </section>
   );

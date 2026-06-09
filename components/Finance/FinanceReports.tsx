@@ -59,6 +59,7 @@ export const FinanceReports: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pathaoMonthly, setPathaoMonthly] = useState<PathaoMonthly | null>(null);
+  const [pathaoMonths, setPathaoMonths] = useState<any[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -73,9 +74,10 @@ export const FinanceReports: React.FC = () => {
         : `${year}-12-31`;
 
       const params = new URLSearchParams({ period, year: String(year), month: String(month) });
-      const [plRes, pathaoRes] = await Promise.allSettled([
+      const [plRes, pathaoRes, pathaoMonthsRes] = await Promise.allSettled([
         fetch(`/api/finance/reports?${params}`).then(r => r.json()),
         fetch(`/api/pathao/metrics?from=${dateFrom}&to=${dateTo}`).then(r => r.json()),
+        fetch('/api/pathao/monthly').then(r => r.json()),
       ]);
 
       if (plRes.status === 'rejected') throw new Error(String(plRes.reason));
@@ -95,6 +97,11 @@ export const FinanceReports: React.FC = () => {
           paymentSent:     pj.invoiceSummary?.paymentSent ?? 0,
           lastInvoiceDate: pj.invoiceSummary?.lastInvoiceDate ?? null,
         });
+      }
+
+      if (pathaoMonthsRes.status === 'fulfilled') {
+        const j = pathaoMonthsRes.value;
+        if (j.months) setPathaoMonths(j.months);
       }
     } catch (e: any) {
       setError(e.message);
@@ -123,6 +130,16 @@ export const FinanceReports: React.FC = () => {
       net_margin: totalRev > 0 ? (netProfit / totalRev) * 100 : 0,
     };
   })() : null;
+
+  // Merge Pathao delivered revenue into trend for the yearly chart
+  const mergedTrend = trend.map(t => {
+    const monthKey = `${year}-${String(t.month).padStart(2, '0')}`;
+    const pathaoM = pathaoMonths.find(pm => pm.month === monthKey);
+    // Use Pathao delivered COD value. If 0 or absent, fallback to manual ledger revenue
+    const revenue = pathaoM ? pathaoM.delivered : t.revenue;
+    return { month: t.month, revenue, expenses: t.expenses, profit: revenue - t.expenses };
+  });
+  const trendHasData = mergedTrend.some(t => t.revenue > 0 || t.expenses > 0);
 
   const downloadCSV = () => {
     if (!effectivePl) return;
@@ -314,9 +331,9 @@ export const FinanceReports: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, padding: '18px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
                 <h3 style={{ margin: '0 0 14px', fontSize: '0.9rem', fontWeight: 800 }}>Monthly Trend — {year}</h3>
-                {trend.some(t => t.revenue > 0 || t.expenses > 0) ? (
+                {trendHasData ? (
                   <ResponsiveContainer width="100%" height={210}>
-                    <BarChart data={trend} barGap={2} barCategoryGap="30%">
+                    <BarChart data={mergedTrend} barGap={2} barCategoryGap="30%">
                       <CartesianGrid vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="month" tickFormatter={v => MONTHS_SHORT[v - 1]} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />

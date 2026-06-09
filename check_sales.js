@@ -1,4 +1,16 @@
-require('dotenv').config({ path: '.env.local' });
+const fs = require('fs');
+const path = require('path');
+if (fs.existsSync(path.join(__dirname, '.env.local'))) {
+  const env = fs.readFileSync(path.join(__dirname, '.env.local'), 'utf8');
+  env.split('\n').forEach(line => {
+    const parts = line.split('=');
+    if (parts.length >= 2) {
+      const key = parts[0].trim();
+      const value = parts.slice(1).join('=').trim().replace(/(^['"]|['"]$)/g, '');
+      process.env[key] = value;
+    }
+  });
+}
 const { Pool } = require('pg');
 
 const pool = new Pool({

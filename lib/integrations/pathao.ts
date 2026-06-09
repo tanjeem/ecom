@@ -1,5 +1,7 @@
 import type { CommerceOrder } from "@/lib/types/commerce";
 import { hasEnv, requiredPathaoEnv } from "./env";
+import fs from 'fs';
+import path from 'path';
 
 type PathaoTokenResponse = {
   access_token: string;
@@ -60,6 +62,104 @@ let _allOrdersCache: PathaoPortalOrder[] | null = null;
 let _allOrdersCacheExpiry = 0;
 const ALL_ORDERS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++; // skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function loadArchivedOrders(): PathaoPortalOrder[] {
+  const filePath = path.join(process.cwd(), 'lib/data/archived_orders.csv');
+  if (!fs.existsSync(filePath)) {
+    console.warn('[Pathao] Archived orders CSV file not found at:', filePath);
+    return [];
+  }
+  
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+    if (lines.length <= 1) return [];
+    
+    const headers = parseCSVLine(lines[0]);
+    const consignmentIdIdx = headers.indexOf('Order consignment id');
+    const createdAtIdx = headers.indexOf('Order created at');
+    const descriptionIdx = headers.indexOf('Order description');
+    const merchantOrderIdIdx = headers.indexOf('Merchant order id');
+    const recipientNameIdx = headers.indexOf('Recipient name');
+    const recipientAddressIdx = headers.indexOf('Recipient address');
+    const recipientPhoneIdx = headers.indexOf('Recipient phone');
+    const statusIdx = headers.indexOf('Order status');
+    const statusUpdatedAtIdx = headers.indexOf('Order status updated at');
+    const collectableIdx = headers.indexOf('Collectable Amount');
+    const collectedIdx = headers.indexOf('Collected amount');
+    const totalFeeIdx = headers.indexOf('Total fee');
+    const deliveryFeeIdx = headers.indexOf('Delivery fee');
+    const orderTypeIdx = headers.indexOf('Order type');
+    const itemTypeIdx = headers.indexOf('item_type');
+
+    const orders: PathaoPortalOrder[] = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+      const row = parseCSVLine(line);
+      
+      const status = row[statusIdx] || '';
+      const collectedAmt = parseFloat(row[collectedIdx] || '0');
+      const collectableAmt = parseFloat(row[collectableIdx] || '0');
+      
+      // If delivered, use collected amount. Otherwise fallback to collectable amount
+      const amount = status.startsWith('Delivered') || status === 'Partial Delivery'
+        ? (collectedAmt || collectableAmt)
+        : collectableAmt;
+
+      const merchant_order_id = row[merchantOrderIdIdx]
+        ? row[merchantOrderIdIdx].replace(/^"+|"+$/g, '')
+        : '';
+
+      orders.push({
+        order_consignment_id: row[consignmentIdIdx] || '',
+        order_created_at: row[createdAtIdx] || '',
+        order_description: row[descriptionIdx] || '',
+        merchant_order_id,
+        recipient_name: row[recipientNameIdx] || '',
+        recipient_address: row[recipientAddressIdx] || '',
+        recipient_phone: row[recipientPhoneIdx] || '',
+        order_amount: amount,
+        total_fee: parseFloat(row[totalFeeIdx] || '0'),
+        delivery_fee: parseFloat(row[deliveryFeeIdx] || '0'),
+        order_status: status,
+        order_status_updated_at: row[statusUpdatedAtIdx] || '',
+        order_type: row[orderTypeIdx] || 'Delivery',
+        item_type: row[itemTypeIdx] || 'Parcel',
+      });
+    }
+    return orders;
+  } catch (error) {
+    console.error('[Pathao] Failed to load archived orders from CSV:', error);
+    return [];
+  }
+}
+
 export async function getPathaoPortalOrders(
   fromDate?: string,
   toDate?: string,
@@ -71,60 +171,103 @@ export async function getPathaoPortalOrders(
     if (_allOrdersCache && Date.now() < _allOrdersCacheExpiry) {
       return _allOrdersCache;
     }
+    // Apply lookback from Jan 1, 2025 so we retrieve all historical orders
+    fromDate = '2025-01-01';
   }
 
-  const token = await getMerchantPortalToken();
-  const allOrders: PathaoPortalOrder[] = [];
-  let page = 1;
-  const perPage = 100;
-  let retryCount = 0;
-  const MAX_RETRIES = 3;
+  // Load archived historical orders from CSV (July 2024 to Feb 2026)
+  const archivedOrders = loadArchivedOrders();
 
-  while (true) {
-    const params = new URLSearchParams({ per_page: String(perPage), page: String(page) });
-    if (fromDate) params.set("from_date", fromDate);
-    if (toDate) params.set("to_date", toDate);
+  // Filter archived orders based on range
+  const filteredArchived = archivedOrders.filter(o => {
+    const d = o.order_created_at.slice(0, 10);
+    if (fromDate && d < fromDate) return false;
+    if (toDate && d > toDate) return false;
+    return true;
+  });
 
-    const res = await fetch(
-      `https://merchant.pathao.com/api/v1/orders/all?${params}`,
-      {
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-        cache: "no-store",
-      }
-    );
+  // Decide if we need to fetch live orders from Pathao API
+  // CSV covers up to '2026-02-28'. If the query range extends after that, fetch live data.
+  const queryEnd = toDate || new Date().toISOString().slice(0, 10);
+  const needsLiveFetch = queryEnd > '2026-02-28';
 
-    // Handle rate limiting with a brief retry
-    if (res.status === 429) {
-      if (retryCount >= MAX_RETRIES) {
-        console.warn(`[Pathao] Rate limit exceeded after ${MAX_RETRIES} retries. Returning partial orders.`);
-        break;
-      }
-      retryCount++;
-      await new Promise(r => setTimeout(r, 2000));
-      continue;
-    }
+  const liveOrders: PathaoPortalOrder[] = [];
+
+  if (needsLiveFetch) {
+    // Fetch live starting from '2026-03-01' or fromDate (whichever is later)
+    const liveFromDate = (!fromDate || fromDate < '2026-03-01') ? '2026-03-01' : fromDate;
     
-    // Reset retry count on success
-    retryCount = 0;
+    try {
+      const token = await getMerchantPortalToken();
+      let page = 1;
+      const perPage = 100;
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
 
-    const json = await res.json() as {
-      code: number;
-      data: { data: PathaoPortalOrder[]; total: number; last_page: number; current_page: number };
-    };
+      while (true) {
+        const params = new URLSearchParams({ per_page: String(perPage), page: String(page) });
+        params.set("from_date", liveFromDate);
+        if (toDate) params.set("to_date", toDate);
 
-    const rows = json.data?.data ?? [];
-    allOrders.push(...rows);
-    if (page >= (json.data?.last_page ?? 1) || rows.length === 0) break;
-    page++;
+        const res = await fetch(
+          `https://merchant.pathao.com/api/v1/orders/all?${params}`,
+          {
+            headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+            cache: "no-store",
+          }
+        );
+
+        if (res.status === 429) {
+          if (retryCount >= MAX_RETRIES) {
+            console.warn(`[Pathao] Rate limit exceeded after ${MAX_RETRIES} retries. Returning partial live orders.`);
+            break;
+          }
+          retryCount++;
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        
+        retryCount = 0;
+
+        const json = await res.json() as {
+          code: number;
+          data: { data: PathaoPortalOrder[]; total: number; last_page: number; current_page: number };
+        };
+
+        const rows = json.data?.data ?? [];
+        liveOrders.push(...rows);
+        if (page >= (json.data?.last_page ?? 1) || rows.length === 0) break;
+        page++;
+        
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } catch (apiError) {
+      console.error('[Pathao] Failed to fetch live orders from API:', apiError);
+    }
   }
+
+  // Combine and deduplicate
+  const combinedMap = new Map<string, PathaoPortalOrder>();
+  for (const o of filteredArchived) {
+    if (o.order_consignment_id) {
+      combinedMap.set(o.order_consignment_id, o);
+    }
+  }
+  for (const o of liveOrders) {
+    if (o.order_consignment_id) {
+      combinedMap.set(o.order_consignment_id, o);
+    }
+  }
+
+  const allCombined = Array.from(combinedMap.values());
 
   // Cache all-time results
   if (isDefaultQuery) {
-    _allOrdersCache = allOrders;
+    _allOrdersCache = allCombined;
     _allOrdersCacheExpiry = Date.now() + ALL_ORDERS_CACHE_TTL;
   }
 
-  return allOrders;
+  return allCombined;
 }
 
 type PathaoCreateResponse = {

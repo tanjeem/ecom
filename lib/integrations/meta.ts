@@ -196,3 +196,169 @@ function getMockAdsData(): MetaAdsData {
     creatives: getFallbackCreatives(),
   };
 }
+
+export interface MetaMonthlyMetric {
+  month: string;
+  label: string;
+  spend: number;
+  revenue: number;
+  roas: number;
+  cpa: number;
+  purchases: number;
+  impressions: number;
+  clicks: number;
+}
+
+function getMockMonthlyAdsData(): MetaMonthlyMetric[] {
+  const months: MetaMonthlyMetric[] = [];
+  const now = new Date();
+  
+  const startDate = new Date(2025, 0, 1);
+  let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+  
+  while (current <= now) {
+    const monthKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
+    const label = current.toLocaleString('default', { month: 'short' });
+    
+    // Vary spend and performance logically for mock consistency
+    const monthIndex = current.getMonth();
+    const baseSpend = 30000 + (monthIndex % 4) * 8000 + Math.sin(monthIndex) * 5000;
+    const spend = Math.round(baseSpend);
+    const roas = parseFloat((2.1 + (monthIndex % 3) * 0.4 + Math.cos(monthIndex) * 0.3).toFixed(2));
+    const revenue = Math.round(spend * roas);
+    const purchases = Math.round(revenue / 1500); // 1500 BDT average order size
+    const cpa = purchases > 0 ? parseFloat((spend / purchases).toFixed(2)) : 0;
+    const clicks = Math.round(spend / 10); // 10 BDT CPC
+    const impressions = clicks * 40; // 2.5% CTR
+    
+    months.push({
+      month: monthKey,
+      label,
+      spend,
+      revenue,
+      roas,
+      cpa,
+      purchases,
+      impressions,
+      clicks,
+    });
+    
+    current.setMonth(current.getMonth() + 1);
+  }
+  return months;
+}
+
+export async function fetchMetaMonthlyInsights(): Promise<MetaMonthlyMetric[]> {
+  const accountId = process.env.META_AD_ACCOUNT_ID;
+  const accessToken = process.env.META_ADS_ACCESS_TOKEN;
+
+  if (!accountId || !accessToken) {
+    console.warn('Meta Ads credentials missing, returning mock monthly data.');
+    return getMockMonthlyAdsData();
+  }
+
+  try {
+    const formattedId = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
+    const now = new Date();
+    // Fetch since Jan 1, 2025
+    const sinceDate = new Date(2025, 0, 1);
+    const since = sinceDate.toISOString().slice(0, 10);
+    const until = now.toISOString().slice(0, 10);
+    const time_range = JSON.stringify({ since, until });
+
+    const query = new URLSearchParams({
+      level: 'account',
+      fields: 'spend,impressions,clicks,purchase_roas,actions,action_values,date_start,date_stop',
+      time_range,
+      time_increment: 'monthly',
+      access_token: accessToken,
+      limit: '100',
+    });
+
+    const url = `${BASE_URL}/${formattedId}/insights?${query.toString()}`;
+    const res = await fetch(url, { cache: 'no-store' });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(
+        `Meta Graph API failed: ${res.status} - ${JSON.stringify(errBody)}`
+      );
+    }
+
+    const json = await res.json();
+    const data = json.data || [];
+
+    const monthsData: MetaMonthlyMetric[] = data.map((item: any) => {
+      const month = item.date_start.slice(0, 7); // YYYY-MM
+      const d = new Date(item.date_start + 'T12:00:00'); // avoid timezone shifts
+      const label = d.toLocaleString('default', { month: 'short' });
+      
+      const spend = parseFloat(item.spend || '0');
+      const impressions = parseInt(item.impressions || '0');
+      const clicks = parseInt(item.clicks || '0');
+
+      // Extract Purchase Value (Revenue)
+      const valItem = item.action_values?.find(
+        (v: any) =>
+          v.action_type === 'purchase' ||
+          v.action_type === 'offsite_conversion.fb_pixel_purchase'
+      );
+      const revenue = valItem ? parseFloat(valItem.value) : 0;
+
+      // Extract conversions for Purchases
+      const actionItem = item.actions?.find(
+        (a: any) =>
+          a.action_type === 'purchase' ||
+          a.action_type === 'offsite_conversion.fb_pixel_purchase'
+      );
+      const purchases = actionItem ? parseInt(actionItem.value) : 0;
+
+      const roas = spend > 0 ? parseFloat((revenue / spend).toFixed(2)) : 0;
+      const cpa = purchases > 0 ? parseFloat((spend / purchases).toFixed(2)) : 0;
+
+      return {
+        month,
+        label,
+        spend,
+        revenue,
+        roas,
+        cpa,
+        purchases,
+        impressions,
+        clicks,
+      };
+    });
+
+    // Sort ascending, but also fill missing months
+    const completeMonths: MetaMonthlyMetric[] = [];
+    const startDate = new Date(2025, 0, 1);
+    let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+    while (current <= now) {
+      const monthKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
+      const label = current.toLocaleString('default', { month: 'short' });
+      
+      const existing = monthsData.find((m) => m.month === monthKey);
+      if (existing) {
+        completeMonths.push(existing);
+      } else {
+        completeMonths.push({
+          month: monthKey,
+          label,
+          spend: 0,
+          revenue: 0,
+          roas: 0,
+          cpa: 0,
+          purchases: 0,
+          impressions: 0,
+          clicks: 0,
+        });
+      }
+      current.setMonth(current.getMonth() + 1);
+    }
+
+    return completeMonths;
+  } catch (error) {
+    console.error('Failed to fetch Meta monthly insights:', error);
+    return getMockMonthlyAdsData();
+  }
+}

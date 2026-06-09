@@ -29,10 +29,12 @@ export async function GET() {
       returned: number; returnedCount: number;
     }> = {};
 
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const startDate = new Date(2025, 0, 1);
+    let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+    while (current <= now) {
+      const key = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
       buckets[key] = { delivered: 0, deliveredCount: 0, returned: 0, returnedCount: 0 };
+      current.setMonth(current.getMonth() + 1);
     }
 
     for (const order of orders) {
