@@ -15,11 +15,11 @@ type Tab = 'overview' | 'transactions' | 'procurement' | 'vendors' | 'reports' |
 const TABS: { id: Tab; label: string; icon: React.FC<any> }[] = [
   { id: 'overview',      label: 'Overview',      icon: LayoutDashboard },
   { id: 'transactions',  label: 'Transactions',  icon: ArrowLeftRight },
+  { id: 'reports',       label: 'P&L Report',    icon: BarChart2 },
+  { id: 'ads',           label: 'Ads',           icon: Megaphone },
   { id: 'fixed-costs',   label: 'Fixed Costs',   icon: Repeat2 },
   { id: 'procurement',   label: 'Procurement',   icon: Package },
   { id: 'vendors',       label: 'Vendors',       icon: Building2 },
-  { id: 'ads',           label: 'Facebook Ads',  icon: Megaphone },
-  { id: 'reports',       label: 'P&L Reports',   icon: BarChart2 },
 ];
 
 export const FinanceView: React.FC = () => {

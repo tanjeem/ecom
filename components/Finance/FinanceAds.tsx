@@ -120,6 +120,7 @@ export const FinanceAds: React.FC = () => {
 
   // Twin Sub-Tabs State
   const [subTab, setSubTab] = useState<'financial' | 'creative'>('financial');
+  const [showModelingPanel, setShowModelingPanel] = useState(false);
 
   // Dynamic Parameter Modeling Parameters
   const [exchangeRate, setExchangeRate] = useState<number>(130);
@@ -179,7 +180,7 @@ export const FinanceAds: React.FC = () => {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 12 }}>
         <RefreshCw size={32} className="animate-spin" style={{ color: '#0066fe' }} />
-        <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Reconciling Meta, Supabase & Pathao structures...</span>
+        <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Loading ad data...</span>
       </div>
     );
   }
@@ -375,10 +376,10 @@ export const FinanceAds: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Megaphone size={20} color="#0066fe" /> Meta Ads Audit Center
+            <Megaphone size={20} color="#0066fe" /> Ads Performance
           </h2>
           <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: '#64748b' }}>
-            Unified marketing reconciliations syncing Meta Manager, Supabase general ledgers, and Pathao shipments
+            Meta spend vs real revenue — reconciled with Pathao deliveries
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -402,7 +403,7 @@ export const FinanceAds: React.FC = () => {
             }}
           >
             <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
-            {refreshing ? 'Syncing...' : 'Sync Cross-Channel'}
+            {refreshing ? 'Syncing...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -424,7 +425,7 @@ export const FinanceAds: React.FC = () => {
           }}
         >
           <Coins size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'text-bottom' }} />
-          Financial Profitability Ledger
+          Profit by Month
         </button>
         <button
           onClick={() => setSubTab('creative')}
@@ -441,135 +442,53 @@ export const FinanceAds: React.FC = () => {
           }}
         >
           <Target size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'text-bottom' }} />
-          Creative & Campaign Audit
+          Campaign Performance
         </button>
       </div>
 
-      {/* RENDER SUB-TAB 1: FINANCIAL PROFITABILITY LEDGER */}
+      {/* RENDER SUB-TAB 1: PROFIT BY MONTH */}
       {subTab === 'financial' && (
         <>
-          {/* Dynamic Modeling Variables Input Panel */}
-          <div style={{
-            background: '#f8fafc',
-            border: '1px solid #e2e7ee',
-            borderRadius: 12,
-            padding: '16px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Zap size={14} color="#0066fe" />
-              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Operational Modeling Variables (Dynamic Audit)
-              </span>
-            </div>
-            
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
-              gap: 16 
-            }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700, color: '#64748b', marginBottom: 4 }}>
-                  EXCHANGE RATE (BDT/USD)
-                </label>
-                <input 
-                  type="number" 
-                  value={exchangeRate}
-                  onChange={(e) => setExchangeRate(Math.max(1, Number(e.target.value)))}
-                  style={{
-                    width: '100%',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    fontSize: '0.83rem',
-                    fontWeight: 700,
-                    outline: 'none',
-                  }}
-                />
+          {/* Collapsible modeling assumptions */}
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e7ee', borderRadius: 10 }}>
+            <button
+              onClick={() => setShowModelingPanel(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', padding: '12px 16px', background: 'none', border: 'none',
+                cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Zap size={13} color="#64748b" />
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569' }}>Modeling Assumptions</span>
+                <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                  Exchange ৳{exchangeRate}/$ · VAT {vatRate}% · COGS ৳{avgCogs} · Ship ৳{avgShipping} · Return loss ৳{avgReturnCost}
+                </span>
               </div>
+              <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>{showModelingPanel ? '▲ Hide' : '▼ Edit'}</span>
+            </button>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700, color: '#64748b', marginBottom: 4 }}>
-                  AD BILL SURCHARGE (VAT %)
-                </label>
-                <input 
-                  type="number" 
-                  value={vatRate}
-                  onChange={(e) => setVatRate(Math.max(0, Number(e.target.value)))}
-                  style={{
-                    width: '100%',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    fontSize: '0.83rem',
-                    fontWeight: 700,
-                    outline: 'none',
-                  }}
-                />
+            {showModelingPanel && (
+              <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, borderTop: '1px solid #e2e7ee' }}>
+                {[
+                  { label: 'Exchange rate (BDT/USD)', value: exchangeRate, set: setExchangeRate, min: 1 },
+                  { label: 'VAT on ad bill (%)', value: vatRate, set: setVatRate, min: 0 },
+                  { label: 'Avg product COGS (৳)', value: avgCogs, set: setAvgCogs, min: 0 },
+                  { label: 'Avg shipping charge (৳)', value: avgShipping, set: setAvgShipping, min: 0 },
+                  { label: 'Avg return loss (৳/order)', value: avgReturnCost, set: setAvgReturnCost, min: 0 },
+                ].map(({ label, value, set, min }) => (
+                  <div key={label} style={{ paddingTop: 12 }}>
+                    <label style={{ display: 'block', fontSize: '0.67rem', fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</label>
+                    <input
+                      type="number" value={value}
+                      onChange={e => set(Math.max(min, Number(e.target.value)))}
+                      style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 10px', fontSize: '0.83rem', fontWeight: 700, outline: 'none' }}
+                    />
+                  </div>
+                ))}
               </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700, color: '#64748b', marginBottom: 4 }}>
-                  AVG PRODUCT COGS (৳)
-                </label>
-                <input 
-                  type="number" 
-                  value={avgCogs}
-                  onChange={(e) => setAvgCogs(Math.max(0, Number(e.target.value)))}
-                  style={{
-                    width: '100%',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    fontSize: '0.83rem',
-                    fontWeight: 700,
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700, color: '#64748b', marginBottom: 4 }}>
-                  AVG SHIPPING CHARGE (৳)
-                </label>
-                <input 
-                  type="number" 
-                  value={avgShipping}
-                  onChange={(e) => setAvgShipping(Math.max(0, Number(e.target.value)))}
-                  style={{
-                    width: '100%',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    fontSize: '0.83rem',
-                    fontWeight: 700,
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700, color: '#64748b', marginBottom: 4 }}>
-                  AVG RETURN LOSS (৳/ORDER)
-                </label>
-                <input 
-                  type="number" 
-                  value={avgReturnCost}
-                  onChange={(e) => setAvgReturnCost(Math.max(0, Number(e.target.value)))}
-                  style={{
-                    width: '100%',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    fontSize: '0.83rem',
-                    fontWeight: 700,
-                    outline: 'none',
-                  }}
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Reconciled KPI Cards Row */}
@@ -629,9 +548,9 @@ export const FinanceAds: React.FC = () => {
             boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)',
           }}>
             <div style={{ marginBottom: 20 }}>
-              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Cross-Channel Reconciliation Trend</h3>
+              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Revenue vs Ad Spend vs Profit</h3>
               <p style={{ margin: '3px 0 0 0', fontSize: '0.73rem', color: '#94a3b8' }}>
-                Comparison of marketing cash burn, aggregated business revenue (ledger + payouts), and dynamic CM2 margins
+                Store revenue (prepaid + COD), actual BDT ad spend, and CM2 profit per month
               </p>
             </div>
             
@@ -695,9 +614,9 @@ export const FinanceAds: React.FC = () => {
             overflow: 'hidden',
           }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9' }}>
-              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Financial Reconciliation Ledger</h3>
+              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Profit by Month</h3>
               <p style={{ margin: '3px 0 0 0', fontSize: '0.73rem', color: '#94a3b8' }}>
-                Consolidated view of ad investment converted to local BDT, sales channels, return losses, and unit margins
+                Ad spend, revenue, efficiency ratio, and contribution margin per month
               </p>
             </div>
             
@@ -706,13 +625,10 @@ export const FinanceAds: React.FC = () => {
                 <thead>
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
                     <th style={{ padding: '12px 24px', color: '#475569', fontWeight: 700 }}>Month</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>USD Spend</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>BDT Spend (VAT-in)</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Store Revenue</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>True MER</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Delivered Orders</th>
+                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Ad Spend (BDT)</th>
+                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Revenue</th>
+                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>MER</th>
                     <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Delivered CAC</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Returns (Count)</th>
                     <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>CM2 Profit</th>
                     <th style={{ padding: '12px 24px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>CM2 Margin</th>
                   </tr>
@@ -728,34 +644,16 @@ export const FinanceAds: React.FC = () => {
                       className="hover-row"
                     >
                       <td style={{ padding: '12px 24px', fontWeight: 700, color: '#0f172a' }}>{item.month}</td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right', color: '#64748b' }}>{fmtUSDDec(item.spend)}</td>
                       <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: '#334155' }}>{fmt(item.actualSpendBDT)}</td>
                       <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>{fmt(item.storeRevenueUnified)}</td>
-                      <td style={{ 
-                        padding: '12px 16px', 
-                        textAlign: 'right', 
-                        fontWeight: 700, 
-                        color: item.trueMER >= 4.0 ? '#10b981' : item.trueMER >= 2.5 ? '#d97706' : '#ef4444' 
-                      }}>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: item.trueMER >= 4.0 ? '#10b981' : item.trueMER >= 2.5 ? '#d97706' : '#ef4444' }}>
                         {item.trueMER}x
                       </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right', color: '#334155' }}>{item.deliveredOrders}</td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: '#475569' }}>{item.deliveredOrders > 0 ? fmt(item.deliveredCAC) : '৳0'}</td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right', color: '#ef4444' }}>{item.returnedOrders}</td>
-                      <td style={{ 
-                        padding: '12px 16px', 
-                        textAlign: 'right', 
-                        fontWeight: 700, 
-                        color: item.cm2Profit >= 0 ? '#8b5cf6' : '#ef4444' 
-                      }}>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: '#475569' }}>{item.deliveredOrders > 0 ? fmt(item.deliveredCAC) : '—'}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: item.cm2Profit >= 0 ? '#8b5cf6' : '#ef4444' }}>
                         {fmt(item.cm2Profit)}
                       </td>
-                      <td style={{ 
-                        padding: '12px 24px', 
-                        textAlign: 'right', 
-                        fontWeight: 700, 
-                        color: item.cm2Margin >= 25 ? '#10b981' : item.cm2Margin >= 10 ? '#4f46e5' : '#ef4444' 
-                      }}>
+                      <td style={{ padding: '12px 24px', textAlign: 'right', fontWeight: 700, color: item.cm2Margin >= 25 ? '#10b981' : item.cm2Margin >= 10 ? '#4f46e5' : '#ef4444' }}>
                         {item.cm2Margin}%
                       </td>
                     </tr>
@@ -764,19 +662,12 @@ export const FinanceAds: React.FC = () => {
                 <tfoot>
                   <tr style={{ background: '#f8fafc', fontWeight: 700, borderTop: '2px solid #e2e7ee' }}>
                     <td style={{ padding: '14px 24px', color: '#0f172a' }}>Blended Total</td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#64748b' }}>{fmtUSDDec(totalSpendUSD)}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: '#334155' }}>{fmt(totalSpendBDT)}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: '#10b981' }}>{fmt(totalStoreRevenue)}</td>
-                    <td style={{ 
-                      padding: '14px 16px', 
-                      textAlign: 'right', 
-                      color: blendedMER >= 4.0 ? '#10b981' : blendedMER >= 2.5 ? '#d97706' : '#ef4444' 
-                    }}>
+                    <td style={{ padding: '14px 16px', textAlign: 'right', color: blendedMER >= 4.0 ? '#10b981' : blendedMER >= 2.5 ? '#d97706' : '#ef4444' }}>
                       {blendedMER}x
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#334155' }}>{totalDeliveredOrders}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: '#ea580c' }}>{fmt(blendedDeliveredCAC)}</td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#ef4444' }}>{totalReturnedOrders}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: '#8b5cf6' }}>{fmt(totalCM2Profit)}</td>
                     <td style={{ padding: '14px 24px', textAlign: 'right', color: '#8b5cf6' }}>{blendedCM2Margin}%</td>
                   </tr>
@@ -848,9 +739,9 @@ export const FinanceAds: React.FC = () => {
             boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)',
           }}>
             <div style={{ marginBottom: 20 }}>
-              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Top-of-Funnel Conversion Efficiency</h3>
+              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Spend vs ROAS Trend</h3>
               <p style={{ margin: '3px 0 0 0', fontSize: '0.73rem', color: '#94a3b8' }}>
-                Track Meta USD budget allocation against pixel conversions and attributed ROAS multipliers {hasOutlier && '(outlier normalized)'}
+                USD spend against pixel-attributed ROAS {hasOutlier && '· outlier month normalized'}
               </p>
             </div>
             
@@ -927,9 +818,9 @@ export const FinanceAds: React.FC = () => {
             marginBottom: 24,
           }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9' }}>
-              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Monthly Performance Ledger</h3>
+              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Campaign Performance by Month</h3>
               <p style={{ margin: '3px 0 0 0', fontSize: '0.73rem', color: '#94a3b8' }}>
-                Granular month-over-month breakdown of USD ad spend, pixel-attributed conversion revenues, and CTR/CPC efficiency
+                Spend, ROAS, CTR, and CPA — key efficiency signals per month
               </p>
             </div>
             
@@ -939,17 +830,10 @@ export const FinanceAds: React.FC = () => {
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
                     <th style={{ padding: '12px 24px', color: '#475569', fontWeight: 700 }}>Month</th>
                     <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Spend (USD)</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Spend (BDT)</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Store Revenue</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>True ROAS</th>
                     <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Attributed ROAS</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Purchases</th>
                     <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Delivered Orders</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>CPA (USD)</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Impressions</th>
-                    <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>Clicks</th>
                     <th style={{ padding: '12px 16px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>CTR</th>
-                    <th style={{ padding: '12px 24px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>CPC (USD)</th>
+                    <th style={{ padding: '12px 24px', color: '#475569', fontWeight: 700, textAlign: 'right' }}>CPA (USD)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -970,61 +854,31 @@ export const FinanceAds: React.FC = () => {
                           {item.month}
                           {item.isOutlier && (
                             <div style={{ fontSize: '0.62rem', color: '#d97706', fontWeight: 800, textTransform: 'uppercase', marginTop: 2 }}>
-                              Anomaly Outlier
+                              Pixel anomaly
                             </div>
                           )}
                         </td>
                         <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: '#334155' }}>
                           {item.spend > 0 ? fmtUSDDec(item.spend) : '$0.00'}
                         </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: '#334155' }}>
-                          {fmt(item.actualSpendBDT)}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>
-                          {fmt(item.storeRevenueUnified)}
-                        </td>
-                        <td style={{ 
-                          padding: '12px 16px', 
-                          textAlign: 'right', 
-                          fontWeight: 700, 
-                          color: item.trueMER >= 4.0 ? '#10b981' : item.trueMER >= 2.5 ? '#d97706' : '#ef4444' 
-                        }}>
-                          {item.trueMER}x
-                        </td>
                         <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: item.isOutlier ? '#d97706' : (item.displayRoas >= 2.5 ? '#8b5cf6' : '#64748b') }}>
                           {item.isOutlier ? (
                             <>
-                              <div style={{ textDecoration: 'line-through', fontSize: '0.73rem', color: '#94a3b8' }}>
-                                {item.roas.toLocaleString()}x
-                              </div>
-                              <div>
-                                {parseFloat(((item.purchases * avgAov) / item.spend).toFixed(2))}x
-                              </div>
+                              <div style={{ textDecoration: 'line-through', fontSize: '0.73rem', color: '#94a3b8' }}>{item.roas.toLocaleString()}x</div>
+                              <div>{parseFloat(((item.purchases * avgAov) / item.spend).toFixed(2))}x</div>
                             </>
                           ) : (
-                            item.displayRoas > 0 ? `${item.displayRoas}x` : '0.00x'
+                            item.displayRoas > 0 ? `${item.displayRoas}x` : '—'
                           )}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', color: '#334155' }}>
-                          {item.purchases.toLocaleString()}
                         </td>
                         <td style={{ padding: '12px 16px', textAlign: 'right', color: '#334155' }}>
                           {item.deliveredOrders.toLocaleString()}
                         </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: item.cpa > 0 ? '#b45309' : '#64748b' }}>
-                          {item.cpa > 0 ? fmtUSDDec(item.cpa) : '$0.00'}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', color: '#64748b' }}>
-                          {item.impressions.toLocaleString()}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', color: '#64748b' }}>
-                          {item.clicks.toLocaleString()}
-                        </td>
                         <td style={{ padding: '12px 16px', textAlign: 'right', color: '#64748b' }}>
                           {ctr}%
                         </td>
-                        <td style={{ padding: '12px 24px', textAlign: 'right', color: '#64748b' }}>
-                          ${Number(cpc).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td style={{ padding: '12px 24px', textAlign: 'right', fontWeight: 600, color: item.cpa > 0 ? '#b45309' : '#64748b' }}>
+                          {item.cpa > 0 ? fmtUSDDec(item.cpa) : '—'}
                         </td>
                       </tr>
                     );
@@ -1032,38 +886,19 @@ export const FinanceAds: React.FC = () => {
                 </tbody>
                 <tfoot>
                   <tr style={{ background: '#f8fafc', fontWeight: 700, borderTop: '2px solid #e2e7ee' }}>
-                    <td style={{ padding: '14px 24px', color: '#0f172a' }}>Blended Total</td>
+                    <td style={{ padding: '14px 24px', color: '#0f172a' }}>Blended</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: '#334155' }}>{fmtUSDDec(totalSpendUSD)}</td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#334155' }}>{fmt(totalSpendBDT)}</td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#10b981' }}>{fmt(totalStoreRevenue)}</td>
-                    <td style={{ 
-                      padding: '14px 16px', 
-                      textAlign: 'right', 
-                      color: blendedMER >= 4.0 ? '#10b981' : blendedMER >= 2.5 ? '#d97706' : '#ef4444' 
-                    }}>
-                      {blendedMER}x
-                    </td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: '#8b5cf6' }}>
                       {hasOutlier ? (
                         <>
-                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 500 }}>
-                            {blendedRoasRaw}x
-                          </div>
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 500 }}>{blendedRoasRaw}x</div>
                           <div>{blendedRoasNormalized}x</div>
                         </>
-                      ) : (
-                        `${blendedRoasRaw}x`
-                      )}
+                      ) : `${blendedRoasRaw}x`}
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#334155' }}>{totalPurchases.toLocaleString()}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: '#334155' }}>{totalDeliveredOrders.toLocaleString()}</td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#ea580c' }}>{fmtUSDDec(blendedCPA)}</td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#64748b' }}>{totalImpressions.toLocaleString()}</td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: '#64748b' }}>{totalClicks.toLocaleString()}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right', color: '#64748b' }}>{blendedCTR}%</td>
-                    <td style={{ padding: '14px 24px', textAlign: 'right', color: '#64748b' }}>
-                      ${blendedCPC.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
+                    <td style={{ padding: '14px 24px', textAlign: 'right', color: '#ea580c' }}>{fmtUSDDec(blendedCPA)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -1078,9 +913,9 @@ export const FinanceAds: React.FC = () => {
             overflow: 'hidden',
           }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9' }}>
-              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Active Campaigns performance</h3>
+              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>Active Campaigns</h3>
               <p style={{ margin: '3px 0 0 0', fontSize: '0.73rem', color: '#94a3b8' }}>
-                Creative performance of active ad campaign flows and budgets
+                Current month campaign breakdown from Meta Ads Manager
               </p>
             </div>
             

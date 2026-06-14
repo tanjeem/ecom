@@ -395,28 +395,37 @@ export const FinanceReports: React.FC = () => {
                 {[
                   { title: 'COGS Breakdown', entries: effectivePl.cogs, total: effectivePl.cogs.total, color: '#7c3aed' },
                   { title: 'OPEX Breakdown', entries: effectivePl.opex, total: effectivePl.opex.total, color: '#dc2626' },
-                ].map(({ title, entries, total, color }) => (
-                  <div key={title} style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, padding: '16px 18px' }}>
-                    <h4 style={{ margin: '0 0 10px', fontSize: '0.8rem', fontWeight: 800, color: '#0f172a' }}>{title}</h4>
-                    {Object.entries(entries).filter(([k, v]) => k !== 'total' && (v as number) > 0).length === 0 ? (
-                      <p style={{ color: '#94a3b8', fontSize: '0.78rem', margin: 0 }}>Nothing logged yet</p>
-                    ) : Object.entries(entries).filter(([k]) => k !== 'total').map(([cat, val]) => {
-                      if ((val as number) === 0) return null;
-                      const pct = total > 0 ? ((val as number) / total * 100) : 0;
-                      return (
-                        <div key={cat} style={{ marginBottom: 7 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: 3 }}>
-                            <span style={{ color: '#374151' }}>{cat.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
-                            <span style={{ fontWeight: 700 }}>{fmt(val as number)}</span>
+                ].map(({ title, entries, total, color }) => {
+                  const lineItems = Object.entries(entries)
+                    .filter(([k, v]) => k !== 'total' && (v as number) > 0)
+                    .sort((a, b) => (b[1] as number) - (a[1] as number));
+                  const topCat = lineItems[0]?.[0];
+                  return (
+                    <div key={title} style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, padding: '16px 18px' }}>
+                      <h4 style={{ margin: '0 0 10px', fontSize: '0.8rem', fontWeight: 800, color: '#0f172a' }}>{title}</h4>
+                      {lineItems.length === 0 ? (
+                        <p style={{ color: '#94a3b8', fontSize: '0.78rem', margin: 0 }}>Nothing logged yet</p>
+                      ) : lineItems.map(([cat, val]) => {
+                        const pct = total > 0 ? ((val as number) / total * 100) : 0;
+                        const isTop = cat === topCat;
+                        return (
+                          <div key={cat} style={{ marginBottom: 7, padding: isTop ? '6px 8px' : undefined, background: isTop ? `${color}08` : undefined, borderRadius: isTop ? 7 : undefined, border: isTop ? `1px solid ${color}20` : undefined }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: 3 }}>
+                              <span style={{ color: isTop ? color : '#374151', fontWeight: isTop ? 800 : 500 }}>
+                                {cat.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                {isTop && <span style={{ fontSize: '0.63rem', marginLeft: 5, opacity: 0.7 }}>▲ biggest</span>}
+                              </span>
+                              <span style={{ fontWeight: 700, color: isTop ? color : '#374151' }}>{fmt(val as number)}</span>
+                            </div>
+                            <div style={{ height: 4, background: '#f1f5f9', borderRadius: 99 }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99, opacity: isTop ? 1 : 0.5 }} />
+                            </div>
                           </div>
-                          <div style={{ height: 4, background: '#f1f5f9', borderRadius: 99 }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99 }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

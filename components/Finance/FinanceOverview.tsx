@@ -2,88 +2,87 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  TrendingUp, TrendingDown, DollarSign, Percent, AlertCircle, RefreshCw,
-  ArrowUpRight, ArrowDownRight, Megaphone,
+  TrendingUp, DollarSign, Percent, RefreshCw, AlertCircle,
+  ArrowUpRight, ArrowDownRight, Megaphone, Package, RotateCcw, Clock,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  Legend,
 } from 'recharts';
-import type { PLData } from '@/lib/types/finance';
-import { fmt, getCategoryLabel, getCategoryColor, MONTHS_SHORT } from './shared';
+import { fmt, MONTHS_SHORT } from './shared';
 
-interface OverviewMetrics {
-  revenue: number; expenses: number; netProfit: number;
-  cogsTotal: number; opexTotal: number; grossMargin: number; netMargin: number;
-  adsMeta: number; adsGoogle: number;
-}
-interface MetaMonthSpend { month: string; label: string; spend: number; storeRevenue: number; deliveredAmount: number; }
-interface PathaoMonthly { deliveredAmount: number; deliveredCount: number; }
-interface PathaoMonthBucket {
-  month: string; label: string;
-  delivered: number; deliveredCount: number;
-  returned: number; returnedCount: number;
-}
-interface ChartMonth {
-  month: string; label: string; total_expense: number;
-  ads_meta?: number; ads_google?: number; fabric?: number; accessories?: number;
-  sewing?: number; packaging_material?: number; rent?: number; salary?: number;
-  transport?: number; photoshoot?: number; miscellaneous?: number;
-}
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
-const KPICard = ({
-  label, value, sub, color, positive, icon: Icon, badge,
+const fmtK = (n: number) => {
+  const a = Math.abs(n);
+  if (a >= 100000) return `৳${(n / 100000).toFixed(1)}L`;
+  if (a >= 1000) return `৳${(n / 1000).toFixed(0)}k`;
+  return `৳${Math.round(n)}`;
+};
+
+// ─── sub-components ───────────────────────────────────────────────────────────
+
+const HeroCard = ({
+  label, value, delta, sub, color, icon: Icon, signal,
 }: {
-  label: string; value: string; sub?: string; color: string;
-  positive?: boolean; icon: React.FC<any>; badge?: string;
+  label: string; value: string; delta?: number | null;
+  sub?: string; color: string; icon: React.FC<any>;
+  signal?: 'good' | 'warn' | 'bad';
 }) => {
-  const Trend = positive === undefined ? null : positive ? ArrowUpRight : ArrowDownRight;
+  const signalBg: Record<string, string> = { good: '#f0fdf4', warn: '#fffbeb', bad: '#fef2f2' };
+  const signalBorder: Record<string, string> = { good: '#bbf7d0', warn: '#fde68a', bad: '#fecaca' };
   return (
     <div style={{
-      background: '#fff', borderRadius: 12, padding: '18px 20px',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)',
-      borderTop: `3px solid ${color}`,
-      display: 'flex', flexDirection: 'column', gap: 10,
-      position: 'relative',
+      background: signal ? signalBg[signal] : '#fff',
+      border: `1.5px solid ${signal ? signalBorder[signal] : '#f1f5f9'}`,
+      borderRadius: 14, padding: '22px 24px',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.04)',
+      display: 'flex', flexDirection: 'column', gap: 14,
     }}>
-      {badge && (
-        <div style={{
-          position: 'absolute', top: 12, right: 12,
-          background: `${color}18`, color: color,
-          borderRadius: 99, padding: '2px 8px',
-          fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.05em',
-        }}>{badge}</div>
-      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
-        <div style={{ background: `${color}18`, borderRadius: 8, padding: 7, display: 'grid', placeItems: 'center' }}>
-          <Icon size={14} color={color} />
+        <span style={{ fontSize: '0.67rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{label}</span>
+        <div style={{ background: `${color}18`, borderRadius: 9, padding: 8, display: 'grid', placeItems: 'center' }}>
+          <Icon size={15} color={color} />
         </div>
       </div>
       <div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: '1.7rem', fontWeight: 900, letterSpacing: '-0.03em', color, lineHeight: 1 }}>{value}</span>
-          {Trend && <Trend size={16} color={color} />}
+        <div style={{ fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.04em', color, lineHeight: 1 }}>{value}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          {delta != null && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 2,
+              fontSize: '0.69rem', fontWeight: 800,
+              background: delta >= 0 ? '#dcfce7' : '#fee2e2',
+              color: delta >= 0 ? '#15803d' : '#dc2626',
+              borderRadius: 6, padding: '2px 7px',
+            }}>
+              {delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+              {Math.abs(delta).toFixed(1)}% vs last month
+            </span>
+          )}
+          {sub && <span style={{ fontSize: '0.71rem', color: '#94a3b8' }}>{sub}</span>}
         </div>
-        {sub && <div style={{ fontSize: '0.73rem', color: '#94a3b8', marginTop: 5 }}>{sub}</div>}
       </div>
     </div>
   );
 };
 
-const ChartCard = ({ title, sub, children, style }: {
-  title: string; sub?: string; children: React.ReactNode; style?: React.CSSProperties;
+const StatCard = ({
+  label, value, sub, color, icon: Icon,
+}: {
+  label: string; value: string; sub?: string; color: string; icon: React.FC<any>;
 }) => (
   <div style={{
-    background: '#fff', borderRadius: 12, padding: '18px 20px',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)',
-    ...style,
+    background: '#fff', borderRadius: 10, padding: '16px 18px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.03)',
+    borderLeft: `3px solid ${color}`,
+    display: 'flex', flexDirection: 'column', gap: 8,
   }}>
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>{title}</div>
-      {sub && <div style={{ fontSize: '0.73rem', color: '#94a3b8', marginTop: 2 }}>{sub}</div>}
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ fontSize: '0.64rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+      <Icon size={13} color={color} />
     </div>
-    {children}
+    <div style={{ fontSize: '1.4rem', fontWeight: 900, color, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</div>
+    {sub && <div style={{ fontSize: '0.69rem', color: '#94a3b8', lineHeight: 1.4 }}>{sub}</div>}
   </div>
 );
 
@@ -91,11 +90,9 @@ const barTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 8, padding: '8px 12px', fontSize: '0.78rem', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-      <div style={{ fontWeight: 800, marginBottom: 5, color: '#0f172a' }}>
-        {typeof label === 'number' ? MONTHS_SHORT[label - 1] : label}
-      </div>
+      <div style={{ fontWeight: 800, marginBottom: 5, color: '#0f172a' }}>{MONTHS_SHORT[Number(label) - 1]}</div>
       {payload.map((p: any) => (
-        <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, color: p.color || '#374151', marginBottom: 2 }}>
+        <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, color: p.color, marginBottom: 2 }}>
           <span>{p.name}</span>
           <span style={{ fontWeight: 700 }}>৳{Number(p.value).toLocaleString()}</span>
         </div>
@@ -104,114 +101,66 @@ const barTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-// Compact label for inside bars: ৳45k / ৳1.2L
-const fmtBar = (v: any) => {
-  const n = Number(v);
-  if (!n || n <= 0) return '';
-  if (n >= 100000) return `৳${(n / 100000).toFixed(1)}L`;
-  if (n >= 1000) return `৳${(n / 1000).toFixed(0)}k`;
-  return `৳${n}`;
-};
-
-// Only renders the label if the bar is tall enough to contain it
-const BarLabel = (props: any) => {
-  const { x, y, width, height, value } = props;
-  const text = fmtBar(value);
-  if (!text || height < 20) return null;
-  return (
-    <text x={x + width / 2} y={y + 13} textAnchor="middle" fill="#fff" fontSize={10} fontWeight={800}>
-      {text}
-    </text>
-  );
-};
+// ─── main component ───────────────────────────────────────────────────────────
 
 export const FinanceOverview: React.FC = () => {
-  const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
-  const [trend, setTrend] = useState<any[]>([]);
-  const [expenseBreakdown, setExpenseBreakdown] = useState<{ name: string; value: number; color: string }[]>([]);
-  const [pathaoMonthly, setPathaoMonthly] = useState<PathaoMonthly | null>(null);
-  const [pathaoMonths, setPathaoMonths] = useState<PathaoMonthBucket[]>([]);
-  const [finCharts, setFinCharts] = useState<ChartMonth[]>([]);
-  const [metaSpend, setMetaSpend] = useState<MetaMonthSpend[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const now = new Date();
+  const y = now.getFullYear();
+  const currentM = now.getMonth() + 1;
+  const lastYear = currentM === 1 ? y - 1 : y;
+  const lastMonth = currentM === 1 ? 12 : currentM - 1;
+  const currentMonthName = now.toLocaleString('default', { month: 'long' });
+  const currentMonthKey = `${y}-${String(currentM).padStart(2, '0')}`;
 
-  const fmtShort = (n: number) => {
-    const abs = Math.abs(n);
-    const sign = n >= 0 ? '+' : '−';
-    if (abs >= 100000) return `${sign}৳${(abs / 100000).toFixed(1)}L`;
-    if (abs >= 1000)   return `${sign}৳${(abs / 1000).toFixed(0)}k`;
-    return `${sign}৳${abs}`;
-  };
+  const [plData, setPlData]           = useState<any>(null);
+  const [pathaoData, setPathaoData]   = useState<any>(null);
+  const [lastPathao, setLastPathao]   = useState<any>(null);
+  const [pathaoMonths, setPathaoMonths] = useState<any[]>([]);
+  const [metaSpend, setMetaSpend]     = useState<any[]>([]);
+  const [finCharts, setFinCharts]     = useState<any[]>([]);
+  const [trend, setTrend]             = useState<any[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const y = now.getFullYear();
-      const m0 = now.getMonth();
-      const monthFrom = `${y}-${String(m0 + 1).padStart(2, '0')}-01`;
-      const monthTo = new Date(y, m0 + 1, 0).toISOString().slice(0, 10);
+      const monthFrom    = `${y}-${String(currentM).padStart(2, '0')}-01`;
+      const monthTo      = new Date(y, currentM, 0).toISOString().slice(0, 10);
+      const lastMonthFrom = `${lastYear}-${String(lastMonth).padStart(2, '0')}-01`;
+      const lastMonthTo  = new Date(lastYear, lastMonth, 0).toISOString().slice(0, 10);
 
-      const [plRes, pathaoRes, pathaoMonthsRes, finChartsRes, metaAdsRes] = await Promise.all([
-        fetch(`/api/finance/reports?period=month&year=${y}&month=${m0 + 1}`),
+      const [plRes, pathaoRes, lastPathaoRes, pathaoMonthsRes, metaAdsRes, chartsRes] = await Promise.all([
+        fetch(`/api/finance/reports?period=month&year=${y}&month=${currentM}`),
         fetch(`/api/pathao/metrics?from=${monthFrom}&to=${monthTo}`),
+        fetch(`/api/pathao/metrics?from=${lastMonthFrom}&to=${lastMonthTo}`),
         fetch('/api/pathao/monthly'),
-        fetch('/api/finance/charts'),
         fetch('/api/finance/ads'),
+        fetch('/api/finance/charts'),
       ]);
 
       if (!plRes.ok) throw new Error('Failed to load finance data');
       const plJson = await plRes.json();
       if (plJson.error) throw new Error(plJson.error);
+      setPlData(plJson);
+      setTrend(plJson.trend || []);
 
-      const pl: PLData = plJson.pl;
-      setMetrics({
-        revenue: pl.revenue.total, expenses: pl.cogs.total + pl.opex.total,
-        netProfit: pl.net_profit, cogsTotal: pl.cogs.total, opexTotal: pl.opex.total,
-        grossMargin: pl.gross_margin, netMargin: pl.net_margin,
-        adsMeta: pl.opex.ads_meta,
-        adsGoogle: pl.opex.ads_google,
-      });
-
-      if (pathaoRes.ok) {
-        const pj = await pathaoRes.json();
-        const d = pj.orderSummary?.delivered;
-        if (d) setPathaoMonthly({ deliveredAmount: d.amount ?? 0, deliveredCount: d.count ?? 0 });
-      }
-      if (pathaoMonthsRes.ok) {
-        const j = await pathaoMonthsRes.json();
-        if (j.months) setPathaoMonths(j.months);
-      }
-      if (finChartsRes.ok) {
-        const j = await finChartsRes.json();
-        if (j.months) setFinCharts(j.months);
-      }
+      if (pathaoRes.ok)       setPathaoData(await pathaoRes.json());
+      if (lastPathaoRes.ok)   setLastPathao(await lastPathaoRes.json());
+      if (pathaoMonthsRes.ok) { const j = await pathaoMonthsRes.json(); if (j.months) setPathaoMonths(j.months); }
+      if (chartsRes.ok)       { const j = await chartsRes.json(); if (j.months) setFinCharts(j.months); }
       if (metaAdsRes.ok) {
         const j = await metaAdsRes.json();
         if (Array.isArray(j)) {
-          // Meta API returns spend in USD — convert to BDT (rate: 130, VAT: 15%)
-          setMetaSpend(j.map((item: any) => {
-            const spendUSD = Number(item.spend) || 0;
-            return {
-              month: item.month as string,
-              label: item.label as string,
-              spend: spendUSD * 130 * 1.15,
-              storeRevenue: Number(item.storeRevenue) || 0,
-              deliveredAmount: Number(item.deliveredAmount) || 0,
-            };
-          }));
+          setMetaSpend(j.map((item: any) => ({
+            month:          item.month as string,
+            spend:          (Number(item.spend) || 0) * 130 * 1.15,
+            storeRevenue:   Number(item.storeRevenue) || 0,
+            deliveredAmount: Number(item.deliveredAmount) || 0,
+          })));
         }
       }
-
-      const breakdown = Object.entries({ ...pl.cogs, ...pl.opex })
-        .filter(([k, v]) => k !== 'total' && (v as number) > 0)
-        .map(([cat, val]) => ({ name: getCategoryLabel(cat), value: val as number, color: getCategoryColor(cat) }))
-        .sort((a, b) => b.value - a.value);
-      setExpenseBreakdown(breakdown);
-      setTrend(plJson.trend || []);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -221,10 +170,12 @@ export const FinanceOverview: React.FC = () => {
 
   useEffect(() => { load(); }, []);
 
+  // ─── loading / error ─────────────────────────────────────────────────────────
+
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5rem', gap: 12, color: '#94a3b8' }}>
       <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} />
-      <span style={{ fontSize: '0.9rem' }}>Loading overview...</span>
+      <span style={{ fontSize: '0.9rem' }}>Loading...</span>
     </div>
   );
 
@@ -237,176 +188,275 @@ export const FinanceOverview: React.FC = () => {
     </div>
   );
 
-  const m = metrics!;
-  const revenue = pathaoMonthly ? pathaoMonthly.deliveredAmount : m.revenue;
-  const revSub = pathaoMonthly
-    ? `${pathaoMonthly.deliveredCount} orders · ${now.toLocaleString('default', { month: 'long' })}`
-    : `${now.toLocaleString('default', { month: 'long' })} ${now.getFullYear()}`;
-  const currentMonthName = now.toLocaleString('default', { month: 'long' });
-  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // ─── derived values ──────────────────────────────────────────────────────────
 
-  // Meta API is the authoritative source for ad spend
-  const currentMetaSpend = metaSpend.find(ms => ms.month === currentMonthKey)?.spend ?? 0;
-  const roasMTD = currentMetaSpend > 0 ? parseFloat((revenue / currentMetaSpend).toFixed(2)) : null;
+  const pl          = plData?.pl;
+  const delivered   = pathaoData?.orderSummary?.delivered  ?? { count: 0, amount: 0 };
+  const returned    = pathaoData?.orderSummary?.returned   ?? { count: 0, amount: 0 };
+  const processing  = pathaoData?.orderSummary?.processing ?? { count: 0 };
+  const invoice     = pathaoData?.invoiceSummary           ?? null;
+  const lastDelivered = lastPathao?.orderSummary?.delivered ?? { count: 0, amount: 0 };
 
-  // Total expenses = everything from P&L (minus manually-logged ads_meta) + Meta API spend
-  const adjustedTotalExpenses = m.expenses - m.adsMeta + currentMetaSpend;
-  const netPositive = revenue - adjustedTotalExpenses >= 0;
+  const currentMetaEntry = metaSpend.find(ms => ms.month === currentMonthKey);
 
-  // Only render months that have already happened — backend adds fixed costs to all 12 months
-  // including future ones, making them show non-zero expenses with zero revenue.
-  const currentMonth = now.getMonth() + 1;
+  // Revenue: Meta reconciled (prepaid ledger + Pathao COD) → falls back to raw Pathao delivered
+  const revenue = currentMetaEntry
+    ? (currentMetaEntry.storeRevenue + currentMetaEntry.deliveredAmount) || delivered.amount
+    : delivered.amount;
+  const lastRevenue = lastDelivered.amount;
+  const momDelta = lastRevenue > 0 ? ((revenue - lastRevenue) / lastRevenue) * 100 : null;
+
+  // Expenses: swap manual Meta entry for the authoritative Meta API spend
+  const metaSpendBDT     = currentMetaEntry?.spend ?? 0;
+  const manualMetaLogged = pl?.opex?.ads_meta ?? 0;
+  const totalExpenses    = pl ? (pl.cogs.total + pl.opex.total - manualMetaLogged + metaSpendBDT) : 0;
+  const netPosition      = revenue - totalExpenses;
+
+  // Return rate
+  const totalClosed  = delivered.count + returned.count;
+  const returnRate   = totalClosed > 0 ? (returned.count / totalClosed) * 100 : 0;
+  const returnSignal = (returnRate < 15 ? 'good' : returnRate < 25 ? 'warn' : 'bad') as 'good' | 'warn' | 'bad';
+  const returnColor  = { good: '#16a34a', warn: '#d97706', bad: '#dc2626' }[returnSignal];
+
+  // Supporting metrics
+  const aov         = delivered.count > 0 ? delivered.amount / delivered.count : 0;
+  const grossMargin = pl?.gross_margin ?? 0;
+  const grossMarginColor = grossMargin >= 45 ? '#16a34a' : grossMargin >= 35 ? '#d97706' : '#dc2626';
+  const mer         = metaSpendBDT > 0 ? revenue / metaSpendBDT : null;
+  const merColor    = mer != null ? (mer >= 4 ? '#16a34a' : mer >= 2.5 ? '#d97706' : '#dc2626') : '#94a3b8';
+  const cashInTransit = invoice
+    ? (invoice.paymentInProcess ?? 0) + (invoice.paymentInReview ?? 0) + (invoice.paymentPreparingForInvoice ?? 0)
+    : 0;
+
+  // Break-even progress
+  const breakEvenPct       = totalExpenses > 0 ? Math.min(1, revenue / totalExpenses) : 0;
+  const breakEvenShortfall = totalExpenses - revenue;
+
+  // YTD chart — merge Pathao revenue and Meta-adjusted expenses per month
   const mergedTrend = trend
-    .filter(t => t.month <= currentMonth)
+    .filter(t => t.month <= currentM)
     .map(t => {
-      const monthKey = `${now.getFullYear()}-${String(t.month).padStart(2, '0')}`;
-      const pathaoM = pathaoMonths.find(pm => pm.month === monthKey);
-      const metaEntry = metaSpend.find(ms => ms.month === monthKey);
-      const fc = finCharts.find(f => f.month === monthKey);
-      const manualAdsMeta = fc?.ads_meta ?? 0;
-      const metaApiSpend = metaEntry?.spend ?? 0;
-      const adjustedExpenses = t.expenses - manualAdsMeta + metaApiSpend;
+      const mk      = `${y}-${String(t.month).padStart(2, '0')}`;
+      const pathaoM = pathaoMonths.find(pm => pm.month === mk);
+      const metaE   = metaSpend.find(ms => ms.month === mk);
+      const fc      = finCharts.find(f => f.month === mk);
+      const adjExp  = t.expenses - (fc?.ads_meta ?? 0) + (metaE?.spend ?? 0);
       return {
-        month: t.month,
-        // Match the Facebook Ads reconciliation ledger: storeRevenue (prepaid+COD) + deliveredAmount (Pathao COD)
-        revenue: metaEntry
-          ? (metaEntry.storeRevenue + metaEntry.deliveredAmount) || t.revenue
+        month:    t.month,
+        revenue:  metaE
+          ? (metaE.storeRevenue + metaE.deliveredAmount) || pathaoM?.delivered || t.revenue
           : pathaoM?.delivered || t.revenue,
-        expenses: Math.max(0, adjustedExpenses),
+        expenses: Math.max(0, adjExp),
       };
     });
-  const trendHasData = mergedTrend.some(t => t.revenue > 0 || t.expenses > 0);
+
+  const netSignal = netPosition >= 0 ? 'good' : 'bad' as 'good' | 'bad';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>Finance Overview</div>
-          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 2 }}>
-            {currentMonthName} {now.getFullYear()} · Pathao COD + logged transactions
-          </div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0f172a' }}>{currentMonthName} {y}</div>
+          <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 2 }}>Pathao COD · Prepaid · Meta Ads</div>
         </div>
-        <button
-          onClick={load}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#f8fafc', border: '1px solid #e2e7ee', borderRadius: 8, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, color: '#374151' }}
-        >
-          <RefreshCw size={13} />
-          Refresh
+        <button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#f8fafc', border: '1px solid #e2e7ee', borderRadius: 8, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, color: '#374151' }}>
+          <RefreshCw size={13} /> Refresh
         </button>
       </div>
 
-      {/* KPI row — 5 cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 12 }}>
-        <KPICard
-          label="Revenue (MTD)" value={fmt(revenue)} sub={revSub}
-          color="#16a34a" positive={revenue > 0} icon={TrendingUp}
+      {/* Hero row — 3 large cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+        <HeroCard
+          label="Revenue — MTD"
+          value={fmt(revenue)}
+          delta={momDelta}
+          sub={`${delivered.count} orders delivered`}
+          color="#16a34a"
+          icon={TrendingUp}
+          signal={revenue > 0 ? 'good' : undefined}
         />
-        <KPICard
-          label="Total Expenses" value={fmt(adjustedTotalExpenses)}
-          sub={`COGS ${fmt(m.cogsTotal)} · Meta ৳${currentMetaSpend > 0 ? (currentMetaSpend / 1000).toFixed(0) + 'k' : '0'}`}
-          color="#ef4444" icon={TrendingDown}
+        <HeroCard
+          label="Net Position — MTD"
+          value={fmtK(netPosition)}
+          sub={netPosition >= 0 ? 'Profitable this month' : 'Operating at a loss'}
+          color={netPosition >= 0 ? '#2563eb' : '#dc2626'}
+          icon={DollarSign}
+          signal={netSignal}
         />
-        <KPICard
-          label="Net Position (MTD)" value={fmt(revenue - adjustedTotalExpenses)}
-          sub={netPositive ? 'Profitable this month' : 'Operating at a loss'}
-          color={netPositive ? '#16a34a' : '#ef4444'} positive={netPositive} icon={DollarSign}
+        <HeroCard
+          label="Return Rate"
+          value={totalClosed > 0 ? `${returnRate.toFixed(1)}%` : '—'}
+          sub={`${returned.count} returned · ${delivered.count} delivered`}
+          color={returnColor}
+          icon={RotateCcw}
+          signal={totalClosed > 0 ? returnSignal : undefined}
         />
-        <KPICard
-          label="Gross Margin" value={`${m.grossMargin.toFixed(1)}%`}
-          sub={`Net margin: ${m.netMargin.toFixed(1)}%`}
-          color={m.grossMargin >= 40 ? '#16a34a' : m.grossMargin >= 20 ? '#f59e0b' : '#ef4444'}
+      </div>
+
+      {/* Supporting metrics — 4 smaller cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <StatCard
+          label="Avg Order Value"
+          value={aov > 0 ? fmt(aov) : '—'}
+          sub={`Based on ${delivered.count} delivered orders`}
+          color="#6366f1"
+          icon={Package}
+        />
+        <StatCard
+          label="Gross Margin"
+          value={pl ? `${grossMargin.toFixed(1)}%` : '—'}
+          sub={pl ? `Net margin: ${pl.net_margin.toFixed(1)}%` : undefined}
+          color={grossMarginColor}
           icon={Percent}
         />
-        <KPICard
-          label="Meta Ads Spend (MTD)"
-          value={currentMetaSpend > 0 ? fmt(currentMetaSpend) : '৳0'}
-          sub={roasMTD !== null ? `ROAS ${roasMTD}× · ${currentMonthName}` : 'No ad spend this month'}
-          color="#db2777"
+        <StatCard
+          label="Marketing Efficiency"
+          value={mer != null ? `${mer.toFixed(1)}×` : '—'}
+          sub={
+            mer == null ? 'No ad spend this month'
+            : mer >= 4    ? 'Strong — room to scale spend'
+            : mer >= 2.5  ? 'Moderate — watch CPAs'
+            : 'Weak — review campaigns'
+          }
+          color={merColor}
           icon={Megaphone}
-          badge={roasMTD !== null ? `${roasMTD}× ROAS` : undefined}
+        />
+        <StatCard
+          label="Cash In Transit"
+          value={cashInTransit > 0 ? fmt(cashInTransit) : '৳0'}
+          sub="Pathao pending payout"
+          color="#d97706"
+          icon={Clock}
         />
       </div>
 
-      {/* Revenue vs Expenses — yearly, fat bars with values inside */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 14 }}>
-        <ChartCard
-          title={`Revenue vs Expenses — ${now.getFullYear()}`}
-          sub="Pathao COD revenue · COGS + OPEX + Meta Ads spend"
-        >
-          {trendHasData ? (
-            <>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={mergedTrend} barGap={3} barCategoryGap="8%">
-                  <CartesianGrid vertical={false} stroke="#f8fafc" />
-                  <XAxis dataKey="month" tickFormatter={v => MONTHS_SHORT[v - 1]} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip content={barTooltip} />
-                  <Legend wrapperStyle={{ fontSize: '0.74rem', paddingTop: 6 }} />
-                  <Bar dataKey="revenue" name="Revenue" fill="#16a34a" radius={[3, 3, 0, 0]} label={<BarLabel />} />
-                  <Bar dataKey="expenses" name="Expenses" fill="#f87171" radius={[3, 3, 0, 0]} label={<BarLabel />} />
-                </BarChart>
-              </ResponsiveContainer>
-              {/* Net P&L strip aligned with bars */}
-              <div style={{ display: 'flex', marginTop: 6, paddingLeft: 55, paddingRight: 4 }}>
-                {mergedTrend.map((d, i) => {
-                  const net = d.revenue - d.expenses;
-                  const hasData = d.revenue > 0 || d.expenses > 0;
-                  return (
-                    <div key={i} style={{
-                      flex: 1, textAlign: 'center', fontSize: '0.62rem', fontWeight: 800,
-                      color: hasData ? (net >= 0 ? '#16a34a' : '#ef4444') : '#e2e7ee',
-                      background: hasData ? (net >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(239,68,68,0.08)') : 'transparent',
-                      borderRadius: 3, padding: '2px 1px', margin: '0 1px',
-                    }}>
-                      {hasData ? fmtShort(net) : '—'}
-                    </div>
-                  );
-                })}
+      {/* Break-even bar */}
+      {totalExpenses > 0 && (
+        <div style={{ background: '#fff', borderRadius: 12, padding: '20px 22px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0f172a' }}>Monthly Break-Even</div>
+              <div style={{ fontSize: '0.69rem', color: '#94a3b8', marginTop: 3 }}>
+                Total costs this month: {fmt(totalExpenses)} &nbsp;·&nbsp; COGS + OPEX + Ads
               </div>
-            </>
-          ) : (
-            <div style={{ height: 220, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 6 }}>
-              <span style={{ fontSize: '1.8rem' }}>📊</span>
-              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>No data yet for {now.getFullYear()}</span>
-              <span style={{ fontSize: '0.74rem' }}>Revenue from Pathao · expenses from Transactions tab</span>
             </div>
-          )}
-        </ChartCard>
+            <div style={{ textAlign: 'right' }}>
+              {breakEvenShortfall > 0 ? (
+                <>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#dc2626' }}>{fmtK(breakEvenShortfall)} to go</div>
+                  <div style={{ fontSize: '0.67rem', color: '#94a3b8', marginTop: 2 }}>Revenue so far: {fmt(revenue)}</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#16a34a' }}>{fmtK(netPosition)} profit</div>
+                  <div style={{ fontSize: '0.67rem', color: '#94a3b8', marginTop: 2 }}>Costs cleared</div>
+                </>
+              )}
+            </div>
+          </div>
+          <div style={{ height: 10, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${breakEvenPct * 100}%`,
+              background: breakEvenShortfall > 0
+                ? `linear-gradient(90deg, #fbbf24, #f59e0b)`
+                : `linear-gradient(90deg, #4ade80, #16a34a)`,
+              borderRadius: 99,
+              transition: 'width 800ms ease',
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: '0.64rem', color: '#cbd5e1' }}>
+            <span>৳0</span>
+            <span>{fmt(totalExpenses)}</span>
+          </div>
+        </div>
+      )}
 
-        <ChartCard title="Expenses This Month" sub={`By category · ${currentMonthName}`}>
-          {expenseBreakdown.length === 0 ? (
-            <div style={{ padding: '20px 0', textAlign: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>
-              No expenses logged this month
-            </div>
+      {/* YTD chart + Order Health */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 290px', gap: 14 }}>
+
+        {/* YTD bar chart */}
+        <div style={{ background: '#fff', borderRadius: 12, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9' }}>
+          <div style={{ fontSize: '0.83rem', fontWeight: 800, color: '#0f172a' }}>Revenue vs Expenses — {y}</div>
+          <div style={{ fontSize: '0.69rem', color: '#94a3b8', marginTop: 2, marginBottom: 14 }}>Pathao COD · COGS + OPEX + Meta</div>
+          {mergedTrend.some(t => t.revenue > 0 || t.expenses > 0) ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={mergedTrend} barGap={3} barCategoryGap="12%">
+                <CartesianGrid vertical={false} stroke="#f8fafc" />
+                <XAxis dataKey="month" tickFormatter={v => MONTHS_SHORT[v - 1]} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />
+                <Tooltip content={barTooltip} />
+                <Bar dataKey="revenue" name="Revenue" fill="#16a34a" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="expenses" name="Expenses" fill="#f87171" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, maxHeight: 240, overflowY: 'auto' }}>
-              {expenseBreakdown.map(item => {
-                const pct = m.expenses > 0 ? (item.value / m.expenses) * 100 : 0;
-                return (
-                  <div key={item.name}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0, display: 'inline-block' }} />
-                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#374151' }}>{item.name}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a' }}>{fmt(item.value)}</span>
-                      </div>
-                    </div>
-                    <div style={{ height: 4, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: item.color, borderRadius: 99, transition: 'width 600ms ease' }} />
-                    </div>
-                  </div>
-                );
-              })}
+            <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.83rem' }}>
+              No data yet for {y}
             </div>
           )}
-        </ChartCard>
+        </div>
+
+        {/* Order Health */}
+        <div style={{ background: '#fff', borderRadius: 12, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <div style={{ fontSize: '0.83rem', fontWeight: 800, color: '#0f172a' }}>Order Health</div>
+            <div style={{ fontSize: '0.69rem', color: '#94a3b8', marginTop: 2 }}>{currentMonthName} · Pathao</div>
+          </div>
+
+          {[
+            {
+              label: 'Delivered',
+              count: delivered.count,
+              amount: delivered.amount,
+              color: '#16a34a',
+              bg: '#f0fdf4',
+            },
+            {
+              label: 'In Transit',
+              count: processing.count,
+              amount: null,
+              color: '#2563eb',
+              bg: '#eff6ff',
+            },
+            {
+              label: 'Returned',
+              count: returned.count,
+              amount: returned.amount > 0 ? returned.amount : null,
+              color: returnColor,
+              bg: returnSignal === 'good' ? '#f0fdf4' : returnSignal === 'warn' ? '#fffbeb' : '#fef2f2',
+            },
+          ].map(item => (
+            <div key={item.label} style={{
+              background: item.bg, borderRadius: 9, padding: '12px 14px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <div>
+                <div style={{ fontSize: '0.63rem', fontWeight: 700, color: item.color, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{item.label}</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{item.count}</div>
+                <div style={{ fontSize: '0.63rem', color: '#94a3b8', marginTop: 2 }}>orders</div>
+              </div>
+              {item.amount != null && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.63rem', color: '#94a3b8', marginBottom: 2 }}>value</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: item.color }}>{fmt(item.amount)}</div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {cashInTransit > 0 && (
+            <div style={{ background: '#fffbeb', borderRadius: 9, padding: '12px 14px', borderLeft: '3px solid #d97706' }}>
+              <div style={{ fontSize: '0.63rem', fontWeight: 700, color: '#d97706', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>Pathao Holding</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0f172a' }}>{fmt(cashInTransit)}</div>
+              <div style={{ fontSize: '0.63rem', color: '#94a3b8', marginTop: 2 }}>Pending payout to your account</div>
+            </div>
+          )}
+        </div>
+
       </div>
-
     </div>
   );
 };
