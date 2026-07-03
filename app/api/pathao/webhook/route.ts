@@ -17,15 +17,42 @@ function wooBase() {
 }
 
 /**
+ * Fetch an order's currently stored Pathao consignment ID meta value, if any.
+ */
+async function getOrderConsignmentId(orderId: number): Promise<string | null> {
+  const res = await fetch(`${wooBase()}/wp-json/wc/v3/orders/${orderId}`, {
+    headers: { Authorization: `Basic ${wooAuth()}`, Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  if (!res.ok) return null;
+  const order = await res.json() as { meta_data?: Array<{ key: string; value: unknown }> };
+  const meta = order.meta_data?.find((m) => m.key === 'ptc_consignment_id' || m.key === 'pathao_consignment_id');
+  return typeof meta?.value === 'string' && meta.value ? meta.value : null;
+}
+
+/**
  * Find WooCommerce order ID by consignment ID stored in meta.
  * Falls back to merchant_order_id if provided (which Pathao sets to the WooCommerce order ID).
+ *
+ * A candidate order is only trusted if it has no consignment ID yet, or its stored
+ * consignment ID already matches the incoming one — this prevents a webhook for one
+ * shipment (e.g. a stale/retried merchant_order_id from Pathao) from stamping its
+ * status onto an unrelated order.
  */
 async function findWooOrderId(consignmentId: string, merchantOrderId?: string): Promise<number | null> {
   // Pathao sets merchant_order_id to the WooCommerce order number/id when we create orders
   // Try that first as it's a direct lookup
   if (merchantOrderId) {
     const numId = Number.parseInt(merchantOrderId.replace(/\D/g, ''), 10);
-    if (!Number.isNaN(numId)) return numId;
+    if (!Number.isNaN(numId)) {
+      const existing = await getOrderConsignmentId(numId);
+      if (existing === null || existing === consignmentId) return numId;
+      console.warn(
+        `[Pathao Webhook] merchant_order_id ${merchantOrderId} resolved to order #${numId}, ` +
+        `but it already has a different consignment (${existing}) than the incoming ${consignmentId}. ` +
+        `Falling back to meta lookup instead of overwriting.`,
+      );
+    }
   }
 
   // Fallback: search by meta key
@@ -35,7 +62,15 @@ async function findWooOrderId(consignmentId: string, merchantOrderId?: string): 
   );
   if (!res.ok) return null;
   const orders = await res.json() as Array<{ id: number }>;
-  return Array.isArray(orders) && orders.length > 0 ? orders[0].id : null;
+  if (!Array.isArray(orders) || orders.length === 0) return null;
+  if (orders.length > 1) {
+    console.warn(
+      `[Pathao Webhook] Ambiguous match: ${orders.length} orders share consignment ${consignmentId}. ` +
+      `Refusing to guess; skipping update.`,
+    );
+    return null;
+  }
+  return orders[0].id;
 }
 
 /**
