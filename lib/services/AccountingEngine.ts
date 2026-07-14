@@ -11,20 +11,23 @@ export class AccountingEngine {
    * Posts a strict Double-Entry Journal.
    * Enforces Zero-Leakage (Total Debits == Total Credits).
    */
-  static async postJournal(referenceId: string, description: string, lines: JournalLine[]) {
+  static async postJournal(referenceId: string, description: string, lines: JournalLine[], entryDate?: string) {
     // 1. Validation: Zero-Leakage check
     const totalDebit = lines.reduce((sum, l) => sum + l.debit, 0);
     const totalCredit = lines.reduce((sum, l) => sum + l.credit, 0);
-    
+
     // We use a small epsilon to avoid JS floating point issues
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       throw new Error(`Zero-Leakage Audit Failed! Debits (৳${totalDebit}) do not equal Credits (৳${totalCredit}). Ref: ${referenceId}`);
     }
 
     // 2. Create Journal Entry
+    // entry_date defaults to today (via DB default/created_at) when not provided,
+    // but callers backfilling historical events should pass the real event date
+    // so revenue lands in the correct accounting period.
     const { data: journal, error: jError } = await supabase
       .from('acc_journal_entries')
-      .insert({ reference_id: referenceId, description })
+      .insert({ reference_id: referenceId, description, entry_date: entryDate ?? new Date().toISOString().slice(0, 10) })
       .select('id')
       .single();
 
@@ -118,7 +121,7 @@ export class AccountingEngine {
   /**
    * Section 3: Courier API Webhook-to-Ledger State Machine Mapping
    */
-  static async handleCourierWebhook(orderId: string, status: string, orderValue: number, fees: number, landedCogs: number) {
+  static async handleCourierWebhook(orderId: string, status: string, orderValue: number, fees: number, landedCogs: number, entryDate?: string) {
     switch (status) {
       case 'consignment_created':
         // Debit: 1210 - Courier COD Receivable
@@ -126,7 +129,7 @@ export class AccountingEngine {
         await this.postJournal(orderId, `Order packed and dispatched - COGS transfer`, [
           { accountCode: '1210', debit: landedCogs, credit: 0 },
           { accountCode: '1360', debit: 0, credit: landedCogs }
-        ]);
+        ], entryDate);
         break;
 
       case 'delivered':
@@ -136,7 +139,7 @@ export class AccountingEngine {
         await this.postJournal(orderId, `Order Delivered - Revenue Recognized`, [
           { accountCode: '1210.CL', debit: orderValue, credit: 0 },
           { accountCode: '4010', debit: 0, credit: orderValue }
-        ]);
+        ], entryDate);
         break;
 
       case 'returned':
@@ -148,7 +151,7 @@ export class AccountingEngine {
           { accountCode: '1360', debit: landedCogs, credit: 0 },
           { accountCode: '6100', debit: fees, credit: 0 },
           { accountCode: '1210', debit: 0, credit: landedCogs + fees }
-        ]);
+        ], entryDate);
         break;
 
       case 'payment_processing':
@@ -157,7 +160,7 @@ export class AccountingEngine {
         await this.postJournal(orderId, `Courier Payment Processing`, [
           { accountCode: '1210.INV', debit: orderValue - fees, credit: 0 },
           { accountCode: '1210.CL', debit: 0, credit: orderValue - fees }
-        ]);
+        ], entryDate);
         break;
 
       case 'disbursed':
@@ -167,7 +170,7 @@ export class AccountingEngine {
         await this.postJournal(orderId, `Courier Payout Settled to Bank`, [
           { accountCode: '1011', debit: orderValue - fees, credit: 0 },
           { accountCode: '1210.INV', debit: 0, credit: orderValue - fees }
-        ]);
+        ], entryDate);
         break;
 
       case 'pickup_allocated':
