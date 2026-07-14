@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const payload = (await request.json()) as {
       orders: CommerceOrder[];
+      storeId?: number;
     };
 
     if (!payload.orders || !Array.isArray(payload.orders)) {
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await bulkCreatePathaoOrders(payload.orders);
+    const result = await bulkCreatePathaoOrders(payload.orders, payload.storeId);
     dashboardCache.clear();
     return NextResponse.json({ result }, { status: 202 });
   } catch (error) {

@@ -34,10 +34,12 @@ async function getOrderConsignmentId(orderId: number): Promise<string | null> {
  * Find WooCommerce order ID by consignment ID stored in meta.
  * Falls back to merchant_order_id if provided (which Pathao sets to the WooCommerce order ID).
  *
- * A candidate order is only trusted if it has no consignment ID yet, or its stored
- * consignment ID already matches the incoming one — this prevents a webhook for one
- * shipment (e.g. a stale/retried merchant_order_id from Pathao) from stamping its
- * status onto an unrelated order.
+ * A candidate order is only trusted via merchant_order_id if it already has a matching
+ * consignment ID on file — i.e. it was actually booked with Pathao before (by us, or by
+ * a prior legitimate webhook). An order with NO consignment ID yet is never trusted via
+ * merchant_order_id alone, since that field is attacker/Pathao-controlled and can collide
+ * with an order number we never actually sent — this previously caused orders that were
+ * never booked to get stamped with a real consignment ID and courier status.
  */
 async function findWooOrderId(consignmentId: string, merchantOrderId?: string): Promise<number | null> {
   // Pathao sets merchant_order_id to the WooCommerce order number/id when we create orders
@@ -46,12 +48,20 @@ async function findWooOrderId(consignmentId: string, merchantOrderId?: string): 
     const numId = Number.parseInt(merchantOrderId.replace(/\D/g, ''), 10);
     if (!Number.isNaN(numId)) {
       const existing = await getOrderConsignmentId(numId);
-      if (existing === null || existing === consignmentId) return numId;
-      console.warn(
-        `[Pathao Webhook] merchant_order_id ${merchantOrderId} resolved to order #${numId}, ` +
-        `but it already has a different consignment (${existing}) than the incoming ${consignmentId}. ` +
-        `Falling back to meta lookup instead of overwriting.`,
-      );
+      if (existing === consignmentId) return numId;
+      if (existing !== null) {
+        console.warn(
+          `[Pathao Webhook] merchant_order_id ${merchantOrderId} resolved to order #${numId}, ` +
+          `but it already has a different consignment (${existing}) than the incoming ${consignmentId}. ` +
+          `Falling back to meta lookup instead of overwriting.`,
+        );
+      } else {
+        console.warn(
+          `[Pathao Webhook] merchant_order_id ${merchantOrderId} resolved to order #${numId}, ` +
+          `but that order has no prior Pathao consignment on file — refusing to auto-adopt it. ` +
+          `Falling back to meta lookup instead.`,
+        );
+      }
     }
   }
 
@@ -137,6 +147,19 @@ export async function POST(request: NextRequest) {
                           typeof body.status            === 'string' ? body.status            : '';
   const merchantOrderId = typeof body.merchant_order_id === 'string' ? body.merchant_order_id :
                           typeof body.order_id          === 'string' ? body.order_id          : '';
+  const storeId         = typeof body.store_id === 'number' ? body.store_id :
+                          typeof body.store_id === 'string' ? Number.parseInt(body.store_id, 10) : undefined;
+
+  // Pathao merchant webhooks are account-wide and can include events for OTHER stores
+  // under the same merchant account (e.g. a second shop configured in the Pathao dashboard).
+  // If the payload identifies which store the event belongs to, reject anything that isn't
+  // our configured store outright — this is the primary defense against that store's order
+  // numbers colliding with ours via merchant_order_id.
+  const ourStoreId = Number(process.env.PATHAO_STORE_ID);
+  if (storeId !== undefined && !Number.isNaN(ourStoreId) && storeId !== ourStoreId) {
+    console.warn(`[Pathao Webhook] Ignoring event for foreign store_id ${storeId} (ours: ${ourStoreId})`);
+    return NextResponse.json({ received: true, ignored: 'foreign_store' }, { status: 202, headers: secretHeader });
+  }
 
   if (consignmentId && orderStatus) {
     try {

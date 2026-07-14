@@ -9,19 +9,20 @@ type BookError  = { orderId: string | undefined; error: string };
 
 export async function POST(request: NextRequest) {
   try {
-    const payload = (await request.json()) as { orders?: CommerceOrder[] };
+    const payload = (await request.json()) as { orders?: CommerceOrder[]; storeId?: number };
 
     if (!payload.orders?.length) {
       return NextResponse.json({ error: "Missing orders array in request body" }, { status: 400 });
     }
 
     const orders = payload.orders;
+    const storeId = payload.storeId;
     const succeeded: BookResult[] = [];
     const failed: BookError[]     = [];
 
     const results = await Promise.allSettled(
       orders.map(async (order) => {
-        const pathao = await createPathaoOrder(order);
+        const pathao = await createPathaoOrder(order, storeId);
         await updateWooOrderPathaoMeta(order.wooId, pathao.consignmentId, pathao.status, pathao.deliveryFee);
         return { orderId: order.id, wooId: order.wooId, consignmentId: pathao.consignmentId, status: pathao.status, deliveryFee: pathao.deliveryFee };
       }),

@@ -447,12 +447,12 @@ function formatBDPhone(raw: string): string {
  * Create a single order in Pathao
  * POST /aladdin/api/v1/orders
  */
-export async function createPathaoOrder(order: CommerceOrder) {
+export async function createPathaoOrder(order: CommerceOrder, storeId?: number) {
   const cityId = await getDefaultCityId();
   const zoneId = await resolveZoneForAddress(cityId, order.address);
 
   const body = {
-    store_id: Number(process.env.PATHAO_STORE_ID),
+    store_id: storeId ?? Number(process.env.PATHAO_STORE_ID),
     merchant_order_id: String(order.wooId || order.id),
     recipient_name: order.customer,
     recipient_phone: formatBDPhone(order.phone),
@@ -606,7 +606,7 @@ export async function getPathaoAreas(zoneId: number) {
  * POST /aladdin/api/v1/orders/bulk
  * Creates multiple Pathao orders in bulk
  */
-export async function bulkCreatePathaoOrders(orders: CommerceOrder[]) {
+export async function bulkCreatePathaoOrders(orders: CommerceOrder[], storeId?: number) {
   // Resolve city once; resolve zone per-order based on address
   const cityId = await getDefaultCityId();
 
@@ -614,7 +614,7 @@ export async function bulkCreatePathaoOrders(orders: CommerceOrder[]) {
     orders: await Promise.all(orders.map(async (order) => {
       const zoneId = await resolveZoneForAddress(cityId, order.address);
       return {
-        store_id: Number(process.env.PATHAO_STORE_ID),
+        store_id: storeId ?? Number(process.env.PATHAO_STORE_ID),
         merchant_order_id: String(order.wooId || order.id),
         recipient_name: order.customer,
         recipient_phone: formatBDPhone(order.phone),

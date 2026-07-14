@@ -93,14 +93,22 @@ const STATUS_CHIP: Record<OrderStatus, { bg: string; color: string }> = {
   completed: { bg: '#cffafe', color: '#0e7490' },
 };
 
+type PathaoStore = { storeId: number; storeName: string; isDefaultStore: boolean };
+
 function OrderDetailPanel({
   order,
   onClose,
   onBook,
+  stores,
+  selectedStoreId,
+  onStoreChange,
 }: {
   readonly order: CommerceOrder;
   readonly onClose: () => void;
   readonly onBook: (order: CommerceOrder) => void;
+  readonly stores: PathaoStore[];
+  readonly selectedStoreId: number | null;
+  readonly onStoreChange: (storeId: number) => void;
 }) {
   const sc = STATUS_CHIP[order.status] ?? STATUS_CHIP.paid;
   const displayStatus = order.status === 'paid' ? 'Processing' : order.status.charAt(0).toUpperCase() + order.status.slice(1);
@@ -194,20 +202,38 @@ function OrderDetailPanel({
               Booked · {order.pathaoConsignment}
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => { onBook(order); onClose(); }}
-              style={{
-                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff',
-                border: 'none', borderRadius: 8, padding: '11px 16px',
-                fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(37,99,235,0.35)',
-              }}
-            >
-              <Send size={15} />
-              Book with Pathao
-            </button>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {stores.length > 1 && (
+                <select
+                  value={selectedStoreId ?? ''}
+                  onChange={(e) => onStoreChange(Number(e.target.value))}
+                  style={{
+                    width: '100%', padding: '8px 10px', borderRadius: 8,
+                    border: '1px solid #d1d5db', fontSize: '0.82rem', color: '#374151', background: '#fff',
+                  }}
+                >
+                  {stores.map((s) => (
+                    <option key={s.storeId} value={s.storeId}>
+                      {s.storeName}{s.isDefaultStore ? ' (default)' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                onClick={() => { onBook(order); onClose(); }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff',
+                  border: 'none', borderRadius: 8, padding: '11px 16px',
+                  fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(37,99,235,0.35)',
+                }}
+              >
+                <Send size={15} />
+                Book with Pathao
+              </button>
+            </div>
           )}
           <a
             href={`https://shingaraproduction.com/wp-admin/post.php?post=${order.wooId}&action=edit`}
@@ -273,6 +299,20 @@ export const OrdersView: React.FC = () => {
   const [viewMode, setViewMode]           = useState<'list' | 'new-order'>('list');
   const [bookingState, setBookingState]   = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [bookingMsg, setBookingMsg]       = useState('');
+  const [pathaoStores, setPathaoStores]   = useState<PathaoStore[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch('/api/pathao/stores')
+      .then((r) => r.json())
+      .then((json: { stores?: PathaoStore[] }) => {
+        const list = json.stores ?? [];
+        setPathaoStores(list);
+        const def = list.find((s) => s.isDefaultStore) ?? list[0];
+        if (def) setSelectedStoreId(def.storeId);
+      })
+      .catch(() => {});
+  }, []);
 
   // Pagination
   const [page, setPage]           = useState(1);
@@ -331,7 +371,7 @@ export const OrdersView: React.FC = () => {
       const res = await fetch('/api/pathao/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orders: ordersToSend }),
+        body: JSON.stringify({ orders: ordersToSend, storeId: selectedStoreId ?? undefined }),
       });
       const json = await res.json() as { error?: string };
       if (res.ok) {
@@ -347,7 +387,7 @@ export const OrdersView: React.FC = () => {
       setBookingState('error');
       setBookingMsg(err instanceof Error ? err.message : 'Network error.');
     }
-  }, [orders, selectedOrders, fetchOrders, page]);
+  }, [orders, selectedOrders, fetchOrders, page, selectedStoreId]);
 
   const handleBookSingle = useCallback(async (order: CommerceOrder) => {
     setBookingState('loading');
@@ -356,7 +396,7 @@ export const OrdersView: React.FC = () => {
       const res = await fetch('/api/pathao/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orders: [order] }),
+        body: JSON.stringify({ orders: [order], storeId: selectedStoreId ?? undefined }),
       });
       const json = await res.json() as { error?: string };
       if (res.ok) {
@@ -371,7 +411,7 @@ export const OrdersView: React.FC = () => {
       setBookingState('error');
       setBookingMsg(err instanceof Error ? err.message : 'Network error.');
     }
-  }, [fetchOrders, page]);
+  }, [fetchOrders, page, selectedStoreId]);
 
   const filteredOrders = activeFilter === 'all'
     ? orders
@@ -464,6 +504,21 @@ export const OrdersView: React.FC = () => {
           >
             <Download size={13} /> Export
           </button>
+
+          {pathaoStores.length > 1 && (
+            <select
+              value={selectedStoreId ?? ''}
+              onChange={(e) => setSelectedStoreId(Number(e.target.value))}
+              title="Pathao store to book orders from"
+              style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 8px', fontSize: '0.8rem', color: '#374151', background: '#fff' }}
+            >
+              {pathaoStores.map((s) => (
+                <option key={s.storeId} value={s.storeId}>
+                  {s.storeName}{s.isDefaultStore ? ' (default)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
 
           <button
             type="button"
@@ -608,6 +663,9 @@ export const OrdersView: React.FC = () => {
           order={detailOrder}
           onClose={() => setDetailOrder(null)}
           onBook={handleBookSingle}
+          stores={pathaoStores}
+          selectedStoreId={selectedStoreId}
+          onStoreChange={setSelectedStoreId}
         />
       )}
       </>}
