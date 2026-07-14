@@ -368,6 +368,11 @@ export async function updateWooOrderPathaoMeta(
     const meta: Array<{ key: string; value: string }> = [
       { key: "ptc_consignment_id", value: consignmentId },
       { key: "ptc_status",         value: pathaoStatus  },
+      // Marks this order as genuinely booked by us — the Pathao webhook requires this
+      // marker before trusting any consignment ID match, so foreign/unrelated Pathao
+      // shipments (e.g. from another store on the same merchant account) can never
+      // attach their status to an order we never sent.
+      { key: "ptc_booked_by_us",   value: "1" },
     ];
     if (deliveryFee != null) meta.push({ key: "pathao_delivery_fee", value: String(deliveryFee) });
     await fetch(`${getWooBaseURL()}/wp-json/wc/v3/orders/${wooId}`, {

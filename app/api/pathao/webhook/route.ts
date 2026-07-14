@@ -17,29 +17,35 @@ function wooBase() {
 }
 
 /**
- * Fetch an order's currently stored Pathao consignment ID meta value, if any.
+ * Fetch an order's currently stored Pathao consignment ID meta value and whether it
+ * carries the "booked by us" marker, if any.
  */
-async function getOrderConsignmentId(orderId: number): Promise<string | null> {
+async function getOrderPathaoMeta(orderId: number): Promise<{ consignmentId: string | null; bookedByUs: boolean }> {
   const res = await fetch(`${wooBase()}/wp-json/wc/v3/orders/${orderId}`, {
     headers: { Authorization: `Basic ${wooAuth()}`, Accept: 'application/json' },
     cache: 'no-store',
   });
-  if (!res.ok) return null;
+  if (!res.ok) return { consignmentId: null, bookedByUs: false };
   const order = await res.json() as { meta_data?: Array<{ key: string; value: unknown }> };
-  const meta = order.meta_data?.find((m) => m.key === 'ptc_consignment_id' || m.key === 'pathao_consignment_id');
-  return typeof meta?.value === 'string' && meta.value ? meta.value : null;
+  const consignmentMeta = order.meta_data?.find((m) => m.key === 'ptc_consignment_id' || m.key === 'pathao_consignment_id');
+  const bookedMeta = order.meta_data?.find((m) => m.key === 'ptc_booked_by_us');
+  return {
+    consignmentId: typeof consignmentMeta?.value === 'string' && consignmentMeta.value ? consignmentMeta.value : null,
+    bookedByUs: bookedMeta?.value === '1' || bookedMeta?.value === 1,
+  };
 }
 
 /**
  * Find WooCommerce order ID by consignment ID stored in meta.
  * Falls back to merchant_order_id if provided (which Pathao sets to the WooCommerce order ID).
  *
- * A candidate order is only trusted via merchant_order_id if it already has a matching
- * consignment ID on file — i.e. it was actually booked with Pathao before (by us, or by
- * a prior legitimate webhook). An order with NO consignment ID yet is never trusted via
- * merchant_order_id alone, since that field is attacker/Pathao-controlled and can collide
- * with an order number we never actually sent — this previously caused orders that were
- * never booked to get stamped with a real consignment ID and courier status.
+ * An order is ONLY ever trusted if it carries the `ptc_booked_by_us` marker — written
+ * exclusively by our own createPathaoOrder/bulkCreatePathaoOrders calls at booking time.
+ * Without this marker, no lookup path (merchant_order_id OR consignment-id meta search)
+ * will match the order, no matter how many webhook events arrive for it. This closes the
+ * hole where a foreign Pathao shipment (e.g. from another store on the same merchant
+ * account) that happened to attach itself once would keep getting "confirmed" on every
+ * subsequent status update for that same consignment ID.
  */
 async function findWooOrderId(consignmentId: string, merchantOrderId?: string): Promise<number | null> {
   // Pathao sets merchant_order_id to the WooCommerce order number/id when we create orders
@@ -47,25 +53,17 @@ async function findWooOrderId(consignmentId: string, merchantOrderId?: string): 
   if (merchantOrderId) {
     const numId = Number.parseInt(merchantOrderId.replace(/\D/g, ''), 10);
     if (!Number.isNaN(numId)) {
-      const existing = await getOrderConsignmentId(numId);
-      if (existing === consignmentId) return numId;
-      if (existing !== null) {
-        console.warn(
-          `[Pathao Webhook] merchant_order_id ${merchantOrderId} resolved to order #${numId}, ` +
-          `but it already has a different consignment (${existing}) than the incoming ${consignmentId}. ` +
-          `Falling back to meta lookup instead of overwriting.`,
-        );
-      } else {
-        console.warn(
-          `[Pathao Webhook] merchant_order_id ${merchantOrderId} resolved to order #${numId}, ` +
-          `but that order has no prior Pathao consignment on file — refusing to auto-adopt it. ` +
-          `Falling back to meta lookup instead.`,
-        );
-      }
+      const { consignmentId: existing, bookedByUs } = await getOrderPathaoMeta(numId);
+      if (bookedByUs && (existing === consignmentId || existing === null)) return numId;
+      console.warn(
+        `[Pathao Webhook] merchant_order_id ${merchantOrderId} resolved to order #${numId}, ` +
+        `but it is not marked as booked by us (bookedByUs=${bookedByUs}, existing=${existing}). ` +
+        `Refusing to adopt; falling back to meta lookup.`,
+      );
     }
   }
 
-  // Fallback: search by meta key
+  // Fallback: search by meta key — still requires the booked-by-us marker
   const res = await fetch(
     `${wooBase()}/wp-json/wc/v3/orders?meta_key=ptc_consignment_id&meta_value=${encodeURIComponent(consignmentId)}&per_page=5`,
     { headers: { Authorization: `Basic ${wooAuth()}`, Accept: 'application/json' }, cache: 'no-store' },
@@ -80,7 +78,16 @@ async function findWooOrderId(consignmentId: string, merchantOrderId?: string): 
     );
     return null;
   }
-  return orders[0].id;
+  const candidateId = orders[0].id;
+  const { bookedByUs } = await getOrderPathaoMeta(candidateId);
+  if (!bookedByUs) {
+    console.warn(
+      `[Pathao Webhook] Meta lookup matched order #${candidateId} for consignment ${consignmentId}, ` +
+      `but it is not marked as booked by us — refusing to update.`,
+    );
+    return null;
+  }
+  return candidateId;
 }
 
 /**
