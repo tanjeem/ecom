@@ -1,10 +1,11 @@
 import { ALL_CATEGORIES, EXPENSE_CATEGORIES, INCOME_CATEGORIES, TRANSFER_CATEGORIES } from '@/lib/types/finance';
 
+// Negative values keep their sign so losses never read as profits
 export const fmt = (n: number) =>
-  `৳${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  `${n < 0 ? '−' : ''}৳${Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 export const fmtFull = (n: number) =>
-  `৳${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `${n < 0 ? '−' : ''}৳${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export const getCategoryLabel = (cat: string) => ALL_CATEGORIES[cat] || cat;
 
@@ -94,4 +95,33 @@ export const btnDanger: React.CSSProperties = {
   ...btnPrimary,
   background: '#fee2e2',
   color: '#b91c1c',
+};
+
+/** Compact taka for chart axes and tight tiles: ৳950, ৳12.5k, ৳3.2L, ৳1.1Cr. */
+export const fmtCompact = (n: number) => {
+  const a = Math.abs(n);
+  const sign = n < 0 ? '−' : '';
+  if (a >= 10_000_000) return `${sign}৳${(a / 10_000_000).toFixed(1)}Cr`;
+  if (a >= 100_000) return `${sign}৳${(a / 100_000).toFixed(a >= 1_000_000 ? 1 : 2)}L`;
+  if (a >= 1000) return `${sign}৳${(a / 1000).toFixed(a >= 10_000 ? 0 : 1)}k`;
+  return `${sign}৳${Math.round(a)}`;
+};
+
+export const fmtPct = (n: number, digits = 1) => `${Number.isFinite(n) ? n.toFixed(digits) : '0'}%`;
+
+/** Chart palette — reference categorical order (validated for CVD on light surfaces). */
+export const CHART = {
+  revenue: '#2a78d6',
+  expenses: '#eb6834',
+  net: '#0f172a',
+  compare: '#94a3b8',
+  grid: '#eef1f5',
+  axis: '#94a3b8',
+  groups: {
+    production: '#2a78d6',
+    marketing: '#eb6834',
+    overhead: '#1baf7a',
+    logistics: '#eda100',
+    other: '#e87ba4',
+  } as Record<string, string>,
 };

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, RefreshCw, RotateCcw, ChevronLeft, ChevronRight, Edit2, Check, X } from 'lucide-react';
+import { Plus, Trash2, RotateCcw, ChevronLeft, ChevronRight, Edit2, Check, X, Repeat2 } from 'lucide-react';
 import { fmt, MONTHS_FULL, inputStyle, selectStyle, btnPrimary, btnSecondary } from './shared';
+import { Spinner, LoadingState, EmptyState } from './ui';
 
 const OPEX_LABELS: Record<string, string> = {
   rent: 'Rent',
@@ -253,7 +254,7 @@ export const FinanceFixedCosts: React.FC = () => {
                   disabled={saving || !addForm.label.trim() || !addForm.default_amount}
                   style={{ ...btnPrimary, padding: '8px 14px', opacity: (!addForm.label.trim() || !addForm.default_amount) ? 0.5 : 1 }}
                 >
-                  {saving ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={13} />}
+                  {saving ? <Spinner size={13} /> : <Check size={13} />}
                   Save
                 </button>
                 <button onClick={() => { setShowAdd(false); setAddForm(emptyAdd()); }} style={{ ...btnSecondary, padding: '8px 10px' }}>
@@ -265,15 +266,9 @@ export const FinanceFixedCosts: React.FC = () => {
 
           {/* List body */}
           {loading ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-              <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} />
-            </div>
+            <LoadingState bare label="Loading fixed costs…" />
           ) : costs.length === 0 ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-              <div style={{ fontSize: '2rem', marginBottom: 8 }}>🏷️</div>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 4 }}>No fixed costs yet</div>
-              <div style={{ fontSize: '0.74rem' }}>Add rent, salary, or any recurring expense above</div>
-            </div>
+            <EmptyState bare icon={Repeat2} title="No fixed costs yet" hint="Add rent, salary, or any recurring expense above." />
           ) : (
             costs.map((cost, i) => (
               <div
@@ -401,7 +396,7 @@ export const FinanceFixedCosts: React.FC = () => {
                   disabled={!hasEdits || saving}
                   style={{ ...btnPrimary, padding: '7px 14px', fontSize: '0.8rem', opacity: hasEdits ? 1 : 0.4 }}
                 >
-                  {saving ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={13} />}
+                  {saving ? <Spinner size={13} /> : <Check size={13} />}
                   Save {MONTHS_FULL[selMonth - 1]}
                 </button>
               </div>

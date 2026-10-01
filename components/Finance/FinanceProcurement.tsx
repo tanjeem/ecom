@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Plus, RefreshCw, AlertCircle, Check, ChevronDown, X } from 'lucide-react';
+import { Plus, Check, X } from 'lucide-react';
 import type { FabricPurchase, AccessoryPurchase, ProductionBatch, FinVendor } from '@/lib/types/finance';
-import { fmt, fmtFull, PAYMENT_METHODS, inputStyle, selectStyle, btnPrimary, btnSecondary, btnDanger } from './shared';
+import { fmt, fmtFull, PAYMENT_METHODS, inputStyle, selectStyle, btnPrimary, btnSecondary } from './shared';
+import { FormField, StatTile, LoadingState, ErrorState, EmptyState } from './ui';
 
 type ProcurementTab = 'fabric' | 'accessories' | 'production';
 
@@ -26,21 +27,6 @@ const StatusPill = ({ status }: { status: string }) => {
     </span>
   );
 };
-
-const SummaryCard = ({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) => (
-  <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 9, padding: '14px 16px' }}>
-    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#68707a', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{label}</div>
-    <div style={{ fontSize: '1.3rem', fontWeight: 900, color: color || '#0f172a' }}>{value}</div>
-    {sub && <div style={{ fontSize: '0.73rem', color: '#94a3b8', marginTop: 3 }}>{sub}</div>}
-  </div>
-);
-
-const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div>
-    <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, color: '#68707a', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>{label}</label>
-    {children}
-  </div>
-);
 
 export const FinanceProcurement: React.FC = () => {
   const [tab, setTab] = useState<ProcurementTab>('fabric');
@@ -198,10 +184,10 @@ export const FinanceProcurement: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 12 }}>
-        <SummaryCard label="Fabric Purchases" value={fmt(fabricItems.reduce((s, i) => s + i.total_cost, 0))} sub={`${fabricItems.length} orders`} />
-        <SummaryCard label="Fabric Outstanding" value={fmt(fabricOutstanding)} sub="Balance due to vendors" color={fabricOutstanding > 0 ? '#dc2626' : '#16a34a'} />
-        <SummaryCard label="Accessory Outstanding" value={fmt(accessoryOutstanding)} sub="Balance due to vendors" color={accessoryOutstanding > 0 ? '#dc2626' : '#16a34a'} />
-        <SummaryCard label="Active Batches" value={String(activeBatches)} sub={`${productionItems.filter(b => b.status === 'Completed').length} completed`} />
+        <StatTile label="Fabric Purchases" value={fmt(fabricItems.reduce((s, i) => s + i.total_cost, 0))} sub={`${fabricItems.length} orders`} />
+        <StatTile label="Fabric Outstanding" value={fmt(fabricOutstanding)} sub="Balance due to vendors" color={fabricOutstanding > 0 ? '#dc2626' : '#16a34a'} />
+        <StatTile label="Accessory Outstanding" value={fmt(accessoryOutstanding)} sub="Balance due to vendors" color={accessoryOutstanding > 0 ? '#dc2626' : '#16a34a'} />
+        <StatTile label="Active Batches" value={String(activeBatches)} sub={`${productionItems.filter(b => b.status === 'Completed').length} completed`} />
       </div>
 
       {/* Tab bar + actions */}
@@ -367,15 +353,9 @@ export const FinanceProcurement: React.FC = () => {
 
       {/* Data table */}
       {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem', gap: 10, color: '#64748b', background: '#fff', borderRadius: 10, border: '1px solid #e2e7ee' }}>
-          <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} />
-          <span style={{ fontSize: '0.85rem' }}>Loading...</span>
-        </div>
+        <LoadingState />
       ) : error ? (
-        <div style={{ padding: '2rem', textAlign: 'center', background: '#fff', borderRadius: 10, border: '1px solid #e2e7ee' }}>
-          <AlertCircle size={20} color="#dc2626" style={{ marginBottom: 8 }} />
-          <p style={{ color: '#dc2626', fontSize: '0.85rem', margin: 0 }}>{error}</p>
-        </div>
+        <ErrorState message={error} onRetry={loadData} />
       ) : tab === 'fabric' ? (
         <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
           <div style={{ overflowX: 'auto' }}>
@@ -389,7 +369,7 @@ export const FinanceProcurement: React.FC = () => {
               </thead>
               <tbody>
                 {fabricItems.length === 0 ? (
-                  <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>No fabric purchases yet.</td></tr>
+                  <tr><td colSpan={10}><EmptyState bare title="No fabric purchases yet" /></td></tr>
                 ) : fabricItems.map(item => (
                   <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '10px 14px', fontSize: '0.82rem', color: '#64748b' }}>{item.date}</td>
@@ -430,7 +410,7 @@ export const FinanceProcurement: React.FC = () => {
               </thead>
               <tbody>
                 {accessoryItems.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>No accessory purchases yet.</td></tr>
+                  <tr><td colSpan={8}><EmptyState bare title="No accessory purchases yet" /></td></tr>
                 ) : accessoryItems.map(item => (
                   <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '10px 14px', fontSize: '0.82rem', color: '#64748b' }}>{item.date}</td>
@@ -469,7 +449,7 @@ export const FinanceProcurement: React.FC = () => {
               </thead>
               <tbody>
                 {productionItems.length === 0 ? (
-                  <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>No production batches yet.</td></tr>
+                  <tr><td colSpan={9}><EmptyState bare title="No production batches yet" /></td></tr>
                 ) : productionItems.map(batch => (
                   <tr key={batch.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '10px 14px', fontSize: '0.82rem', color: '#64748b' }}>{batch.date}</td>

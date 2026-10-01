@@ -38,8 +38,19 @@ export default function Home() {
   const [activeView, setActiveView] = useState<ViewType>('dashboard');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [newOrderSignal, setNewOrderSignal] = useState(0);
 
   const CurrentView = viewComponents[activeView];
+
+  // Search and "New Order" both live on the Orders view; jump there from anywhere
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    if (query.trim()) setActiveView('orders');
+  };
+  const handleNewOrder = () => {
+    setActiveView('orders');
+    setNewOrderSignal((n) => n + 1);
+  };
 
   return (
     <div className="app-shell">
@@ -48,10 +59,14 @@ export default function Home() {
       <main className="workspace">
         <Topbar
           title={viewTitles[activeView]}
-          onSearch={setSearchQuery}
+          searchQuery={searchQuery}
+          onSearch={handleSearch}
+          onNewOrder={handleNewOrder}
         />
 
-        <CurrentView />
+        {activeView === 'orders'
+          ? <OrdersView newOrderSignal={newOrderSignal} searchQuery={searchQuery} />
+          : <CurrentView />}
       </main>
 
       <Drawer

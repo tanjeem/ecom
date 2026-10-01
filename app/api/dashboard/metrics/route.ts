@@ -52,13 +52,15 @@ function getDateRange(period: string, customAfter?: string, customBefore?: strin
   if (period === 'month') {
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     const prevStart = new Date(now.getFullYear(), now.getMonth()-1, 1);
-    const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    // Compare month-to-date with the same span of last month, not the whole month
+    const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+    const prevEnd = new Date(now.getFullYear(), now.getMonth()-1, Math.min(now.getDate(), lastDayPrev), now.getHours(), now.getMinutes(), now.getSeconds());
     return { after: toISODate(start), before: undefined, label: 'This month', prevAfter: toISODate(prevStart), prevBefore: prevEnd.toISOString() };
   }
   if (period === 'year') {
     const start = new Date(now.getFullYear(), 0, 1);
     const prevStart = new Date(now.getFullYear()-1, 0, 1);
-    const prevEnd = new Date(now.getFullYear()-1, 11, 31, 23, 59, 59);
+    const prevEnd = new Date(now); prevEnd.setFullYear(now.getFullYear()-1);
     return { after: toISODate(start), before: undefined, label: 'This year', prevAfter: toISODate(prevStart), prevBefore: prevEnd.toISOString() };
   }
   return { after: undefined, before: undefined, label: 'All time', prevAfter: undefined, prevBefore: undefined };

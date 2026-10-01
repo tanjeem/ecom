@@ -36,8 +36,14 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
           </span>
         </div>
       ) : (
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, minHeight: 0 }}>
-          {alerts.map((alert) => (
+        <>
+        <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: 8 }}>
+          {alerts.length} variant{alerts.length === 1 ? '' : 's'} low · {alerts.filter(a => a.current <= 1).length} critical (≤1 left)
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, minHeight: 0, maxHeight: 440 }}>
+          {[...alerts].sort((a, b) => a.current - b.current).map((alert) => {
+            const critical = alert.current <= 1;
+            return (
             <div
               key={alert.sku}
               style={{
@@ -46,9 +52,9 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
                 justifyContent: 'space-between',
                 padding: '6px 10px',
                 marginBottom: 4,
-                backgroundColor: '#fff5f5',
-                border: '1px solid #fee2e2',
-                borderLeft: '4px solid #ef4444',
+                backgroundColor: critical ? '#fff5f5' : '#fffbeb',
+                border: `1px solid ${critical ? '#fee2e2' : '#fef3c7'}`,
+                borderLeft: `4px solid ${critical ? '#ef4444' : '#f59e0b'}`,
                 borderRadius: 6,
               }}
             >
@@ -59,8 +65,8 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
                   width: 26,
                   height: 26,
                   borderRadius: 6,
-                  backgroundColor: '#fee2e2',
-                  color: '#ef4444',
+                  backgroundColor: critical ? '#fee2e2' : '#fef3c7',
+                  color: critical ? '#ef4444' : '#d97706',
                   flexShrink: 0,
                 }}>
                   <AlertTriangle size={13} strokeWidth={2.5} />
@@ -82,7 +88,7 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
                 <span style={{
                   fontSize: '0.8rem',
                   fontWeight: 800,
-                  color: '#b91c1c',
+                  color: critical ? '#b91c1c' : '#b45309',
                 }}>
                   {alert.current}
                 </span>
@@ -91,8 +97,10 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
                 </span>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
+        </>
       )}
     </div>
   );

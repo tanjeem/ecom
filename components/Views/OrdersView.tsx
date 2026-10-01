@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Download, Send, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { InboxOrderForm, BulkOrderForm, type InboxOrderData } from '@/components/Orders/InboxOrderForm';
 import { OrdersTable } from '@/components/Orders/OrdersTable';
@@ -251,7 +251,7 @@ function OrderDetailPanel({
 
 /* ── New order full page ──────────────────────────────────────────────────── */
 
-function NewOrderPage({ onCreated }: { readonly onCreated: () => void }) {
+function NewOrderPage({ onCreated, onBack }: { readonly onCreated: () => void; readonly onBack: () => void }) {
   const [mode, setMode] = useState<'single' | 'bulk'>('single');
 
   const handleSubmit = async (data: InboxOrderData): Promise<{ ok: boolean; error?: string }> => {
@@ -267,6 +267,11 @@ function NewOrderPage({ onCreated }: { readonly onCreated: () => void }) {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', background: '#f0f2f6', padding: '22px 28px' }}>
+      <button type="button" onClick={onBack}
+        style={{ background: 'none', border: 'none', padding: 0, marginBottom: 14, cursor: 'pointer', color: '#2563eb', fontSize: '0.85rem', fontWeight: 600 }}>
+        ← Back to orders
+      </button>
+
       {/* Sub-tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 18, background: '#fff', borderRadius: 8, padding: 4, border: '1px solid #e4e8ef', width: 'fit-content' }}>
         {(['single', 'bulk'] as const).map(m => (
@@ -289,14 +294,33 @@ function NewOrderPage({ onCreated }: { readonly onCreated: () => void }) {
 
 /* ── Main view ───────────────────────────────────────────────────────────── */
 
-export const OrdersView: React.FC = () => {
+// Last "New Order" press already acted on. Module-level so remounting the view
+// (navigating away and back) doesn't reopen the form for an old press.
+let handledNewOrderSignal = 0;
+
+interface OrdersViewProps {
+  /** Increments each time the topbar "New Order" button is pressed */
+  readonly newOrderSignal?: number;
+  /** Text from the topbar search box */
+  readonly searchQuery?: string;
+}
+
+export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, searchQuery = '' }) => {
   const [orders, setOrders]               = useState<CommerceOrder[]>([]);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [isLoading, setIsLoading]         = useState(true);
   const [isSyncing, setIsSyncing]         = useState(false);
   const [activeFilter, setActiveFilter]   = useState<FilterType>('all');
   const [detailOrder, setDetailOrder]     = useState<CommerceOrder | null>(null);
-  const [viewMode, setViewMode]           = useState<'list' | 'new-order'>('list');
+  const [viewMode, setViewMode]           = useState<'list' | 'new-order'>(() =>
+    newOrderSignal > handledNewOrderSignal ? 'new-order' : 'list');
+
+  useEffect(() => {
+    if (newOrderSignal > handledNewOrderSignal) {
+      handledNewOrderSignal = newOrderSignal;
+      setViewMode('new-order');
+    }
+  }, [newOrderSignal]);
   const [bookingState, setBookingState]   = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [bookingMsg, setBookingMsg]       = useState('');
   const [pathaoStores, setPathaoStores]   = useState<PathaoStore[]>([]);
@@ -319,10 +343,14 @@ export const OrdersView: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal]           = useState(0);
 
+  // Read through a ref so callbacks that captured fetchOrders still search the latest text
+  const searchRef = useRef(searchQuery.trim());
+
   const fetchOrders = useCallback(async (p = page) => {
     setIsSyncing(true);
     try {
       const params = new URLSearchParams({ page: String(p), perPage: String(PER_PAGE) });
+      if (searchRef.current) params.set('search', searchRef.current);
       const res = await fetch(`/api/orders?${params}`);
       const data = await res.json() as { orders?: CommerceOrder[]; total?: number; page?: number; totalPages?: number };
       setOrders(data.orders ?? []);
@@ -338,6 +366,19 @@ export const OrdersView: React.FC = () => {
   }, [page]);
 
   useEffect(() => { fetchOrders(1); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced server-side search across all orders, not just the current page
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q === searchRef.current) return;
+    const timer = setTimeout(() => {
+      searchRef.current = q;
+      setSelectedOrders([]);
+      setViewMode('list');
+      fetchOrders(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goToPage = (p: number) => {
     setSelectedOrders([]);
@@ -427,31 +468,12 @@ export const OrdersView: React.FC = () => {
   return (
     <section className="view is-active" id="orders-view" data-title="Orders" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-      {/* ── Top-level view tabs ──────────────────────────────────────────── */}
-      <div style={{ background: '#f0f2f6', borderBottom: '1px solid #e4e8ef', padding: '8px 12px' }}>
-        <div style={{ display: 'flex', gap: 4, background: '#fff', borderRadius: 8, padding: 4, border: '1px solid #e4e8ef' }}>
-        {(['list', 'new-order'] as const).map((key) => {
-          const active = viewMode === key;
-          return (
-            <button key={key} type="button" onClick={() => setViewMode(key)}
-              style={{
-                flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer',
-                fontSize: '0.88rem', fontWeight: active ? 700 : 500,
-                color: active ? '#fff' : '#6b7280',
-                background: active ? '#2563eb' : 'transparent',
-                borderRadius: 6,
-                transition: 'all 0.15s',
-              }}>
-              {key === 'list' ? 'All Orders' : '+ New Order'}
-            </button>
-          );
-        })}
-        </div>
-      </div>
-
       {/* ── New order full page ──────────────────────────────────────────── */}
       {viewMode === 'new-order' && (
-        <NewOrderPage onCreated={async () => { setViewMode('list'); await fetchOrders(page); }} />
+        <NewOrderPage
+          onBack={() => setViewMode('list')}
+          onCreated={async () => { setViewMode('list'); await fetchOrders(page); }}
+        />
       )}
 
       {/* ── Orders list ──────────────────────────────────────────────────── */}
@@ -585,6 +607,7 @@ export const OrdersView: React.FC = () => {
         }}>
           <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>
             Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, total)} of <strong>{total.toLocaleString()}</strong> orders
+            {searchRef.current && <> matching “{searchRef.current}”</>}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <button

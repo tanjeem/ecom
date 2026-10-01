@@ -27,13 +27,14 @@ export async function GET() {
     const buckets: Record<string, {
       delivered: number; deliveredCount: number;
       returned: number; returnedCount: number;
+      estimated: number;
     }> = {};
 
     const startDate = new Date(2025, 0, 1);
     let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
     while (current <= now) {
       const key = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
-      buckets[key] = { delivered: 0, deliveredCount: 0, returned: 0, returnedCount: 0 };
+      buckets[key] = { delivered: 0, deliveredCount: 0, returned: 0, returnedCount: 0, estimated: 0 };
       current.setMonth(current.getMonth() + 1);
     }
 
@@ -44,6 +45,8 @@ export async function GET() {
       if (DELIVERED.has(order.order_status)) {
         buckets[month].delivered += amount;
         buckets[month].deliveredCount++;
+        // Reconstructed from WooCommerce without a final Pathao status
+        if (order.order_type === 'Estimated') buckets[month].estimated += amount;
       } else if (RETURNED.has(order.order_status)) {
         buckets[month].returned += amount;
         buckets[month].returnedCount++;

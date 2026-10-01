@@ -53,10 +53,13 @@ function buildTrend(
   fixedCosts: { id: string; default_amount: number }[],
   fixedMonths: { fixed_cost_id: string; month: string; amount: number }[],
   year: number,
+  currentMonthKey: string,
 ) {
   return Array.from({ length: 12 }, (_, i) => {
     const m = i + 1;
     const monthKey = `${year}-${String(m).padStart(2, '0')}`;
+    // Months that haven't started yet have no actuals — don't chart projected fixed costs
+    if (monthKey > currentMonthKey) return { month: m, revenue: 0, expenses: 0, profit: 0 };
     const monthTx = trendData.filter(t => Number.parseInt(t.date.slice(5, 7), 10) === m);
     const revenue = monthTx.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0);
     let expenses = monthTx.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0);
@@ -115,8 +118,11 @@ export async function GET(req: NextRequest) {
   if (period === 'month') {
     applyFixedCosts(pl, `${year}-${String(month).padStart(2, '0')}`, fixedCosts, fixedMonths);
   } else if (period === 'year') {
+    const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     for (let m = 1; m <= 12; m++) {
-      applyFixedCosts(pl, `${year}-${String(m).padStart(2, '0')}`, fixedCosts, fixedMonths);
+      const key = `${year}-${String(m).padStart(2, '0')}`;
+      if (key > thisMonthKey) break;
+      applyFixedCosts(pl, key, fixedCosts, fixedMonths);
     }
   }
 
@@ -125,7 +131,8 @@ export async function GET(req: NextRequest) {
   pl.net_profit = pl.gross_profit - pl.opex.total;
   pl.net_margin = pl.revenue.total > 0 ? (pl.net_profit / pl.revenue.total) * 100 : 0;
 
-  const trend = buildTrend(trendRes.data || [], fixedCosts, fixedMonths, year);
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const trend = buildTrend(trendRes.data || [], fixedCosts, fixedMonths, year, currentMonthKey);
 
   return NextResponse.json({ pl, period: { from: dateFrom, to: dateTo }, trend });
 }

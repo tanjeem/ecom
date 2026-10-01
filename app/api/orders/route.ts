@@ -12,9 +12,10 @@ export async function GET(request: NextRequest) {
   const page    = Math.max(1, Number(sp.get("page")    || 1));
   const perPage = Math.max(1, Number(sp.get("perPage") || DEFAULT_PER_PAGE));
   const status  = sp.get("status") || undefined;
+  const search  = sp.get("search")?.trim() || undefined;
 
   try {
-    const { orders, total, totalPages } = await getWooOrdersPage(page, perPage, status);
+    const { orders, total, totalPages } = await getWooOrdersPage(page, perPage, status, search);
 
     // Auto-sync WooCommerce status from cached Pathao status (fire and forget)
     const toComplete = orders.filter(

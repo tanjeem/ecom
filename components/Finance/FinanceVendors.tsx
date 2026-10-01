@@ -1,17 +1,11 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Plus, RefreshCw, AlertCircle, X, Building2, Phone } from 'lucide-react';
+import { Plus, RefreshCw, X, Building2, Phone } from 'lucide-react';
 import type { FinVendor } from '@/lib/types/finance';
 import { VENDOR_CATEGORIES } from '@/lib/types/finance';
 import { fmt, inputStyle, selectStyle, btnPrimary, btnSecondary } from './shared';
-
-const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div>
-    <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, color: '#68707a', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>{label}</label>
-    {children}
-  </div>
-);
+import { FormField, LoadingState, ErrorState, EmptyState } from './ui';
 
 const emptyForm = () => ({ name: '', category: 'other', phone: '', bank_details: '', notes: '' });
 
@@ -155,20 +149,11 @@ export const FinanceVendors: React.FC = () => {
 
       {/* Vendor list */}
       {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem', gap: 10, color: '#64748b', background: '#fff', borderRadius: 10, border: '1px solid #e2e7ee' }}>
-          <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} />
-          <span>Loading vendors...</span>
-        </div>
+        <LoadingState label="Loading vendors…" />
       ) : error ? (
-        <div style={{ padding: '2rem', textAlign: 'center', background: '#fff', borderRadius: 10, border: '1px solid #e2e7ee' }}>
-          <AlertCircle size={20} color="#dc2626" style={{ marginBottom: 8 }} />
-          <p style={{ color: '#dc2626', fontSize: '0.85rem', margin: 0 }}>{error}</p>
-        </div>
+        <ErrorState message={error} onRetry={load} />
       ) : filtered.length === 0 ? (
-        <div style={{ padding: '3rem', textAlign: 'center', background: '#fff', borderRadius: 10, border: '1px solid #e2e7ee', color: '#94a3b8' }}>
-          <Building2 size={28} style={{ marginBottom: 12, opacity: 0.4 }} />
-          <p style={{ margin: 0, fontSize: '0.85rem' }}>No vendors yet. Add your first vendor above.</p>
-        </div>
+        <EmptyState icon={Building2} title="No vendors yet" hint="Add your first vendor above." />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
           {filtered.map(v => {

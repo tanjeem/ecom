@@ -362,3 +362,62 @@ export async function fetchMetaMonthlyInsights(): Promise<MetaMonthlyMetric[]> {
     return getMockMonthlyAdsData();
   }
 }
+
+/**
+ * Daily account-level spend (USD) keyed by YYYY-MM-DD. Returns null when Meta
+ * credentials are missing or the API fails — callers fall back to manually
+ * logged ad spend instead of mock data, so financial figures stay real.
+ */
+export async function fetchMetaDailySpend(since: string, until: string): Promise<Record<string, number> | null> {
+  const accountId = process.env.META_AD_ACCOUNT_ID;
+  const accessToken = process.env.META_ADS_ACCESS_TOKEN;
+  if (!accountId || !accessToken || since > until) return null;
+
+  const formattedId = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
+
+  const fetchChunk = async (from: string, to: string) => {
+    const query = new URLSearchParams({
+      level: 'account',
+      fields: 'spend,date_start',
+      time_range: JSON.stringify({ since: from, until: to }),
+      time_increment: '1',
+      access_token: accessToken,
+      limit: '500',
+    });
+    const daily: Record<string, number> = {};
+    let url: string | null = `${BASE_URL}/${formattedId}/insights?${query.toString()}`;
+    for (let page = 0; url && page < 10; page++) {
+      let res: Response | null = null;
+      // One retry: the Graph API occasionally drops connections
+      for (let attempt = 0; attempt < 2 && !res?.ok; attempt++) {
+        try { res = await fetch(url, { cache: 'no-store' }); } catch (e) { if (attempt === 1) throw e; }
+      }
+      if (!res?.ok) throw new Error(`Meta Graph API failed: ${res?.status}`);
+      const json: any = await res.json();
+      for (const row of json.data || []) {
+        daily[row.date_start] = (daily[row.date_start] || 0) + parseFloat(row.spend || '0');
+      }
+      url = json.paging?.next || null;
+    }
+    return daily;
+  };
+
+  // Long ranges are split into ~90-day chunks, fetched in parallel
+  const chunks: [string, string][] = [];
+  const d = new Date(`${since}T00:00:00Z`);
+  while (d.toISOString().slice(0, 10) <= until) {
+    const start = d.toISOString().slice(0, 10);
+    d.setUTCDate(d.getUTCDate() + 89);
+    const end = d.toISOString().slice(0, 10);
+    chunks.push([start, end < until ? end : until]);
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+
+  try {
+    const parts = await Promise.all(chunks.map(([a, b]) => fetchChunk(a, b)));
+    return Object.assign({}, ...parts);
+  } catch (error) {
+    console.error('Failed to fetch Meta daily spend:', error);
+    return null;
+  }
+}

@@ -1,36 +1,34 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { 
-  Megaphone, 
-  TrendingUp, 
-  RefreshCw, 
-  DollarSign, 
-  Percent, 
-  Target, 
-  Activity, 
+import {
+  Megaphone,
+  TrendingUp,
+  RefreshCw,
+  DollarSign,
+  Percent,
+  Target,
+  Activity,
   AlertTriangle,
-  Info,
   Coins,
-  ArrowUpRight,
   ShieldCheck,
   Zap,
-  Eye,
-  MousePointerClick
+  MousePointerClick,
 } from 'lucide-react';
-import { 
-  ComposedChart, 
-  Bar, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer 
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
 } from 'recharts';
 import type { MetaCampaign } from '@/lib/integrations/meta';
 import { fmt } from './shared';
+import { StatTile, LoadingState, ErrorState } from './ui';
 
 interface ReconciledMonth {
   month: string;
@@ -54,61 +52,6 @@ const fmtUSD = (n: number) =>
 
 const fmtUSDDec = (n: number) =>
   `$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-const KPICard = ({
-  label, 
-  value, 
-  sub, 
-  color, 
-  icon: Icon,
-  badge,
-}: {
-  label: string; 
-  value: string; 
-  sub?: string; 
-  color: string; 
-  icon: React.FC<any>;
-  badge?: React.ReactNode;
-}) => {
-  return (
-    <div style={{
-      background: '#fff',
-      borderRadius: 12,
-      padding: '18px 20px',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)',
-      borderTop: `3px solid ${color}`,
-      display: 'flex', 
-      flexDirection: 'column', 
-      gap: 10,
-      transition: 'transform 150ms ease, box-shadow 150ms ease',
-    }}
-    onMouseEnter={(e) => {
-      e.currentTarget.style.transform = 'translateY(-2px)';
-      e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06)';
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.transform = 'translateY(0)';
-      e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)';
-    }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {badge}
-          <div style={{ background: `${color}18`, borderRadius: 8, padding: 7, display: 'grid', placeItems: 'center' }}>
-            <Icon size={14} color={color} />
-          </div>
-        </div>
-      </div>
-      <div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: '1.7rem', fontWeight: 900, letterSpacing: '-0.03em', color: color, lineHeight: 1 }}>{value}</span>
-        </div>
-        {sub && <div style={{ fontSize: '0.73rem', color: '#94a3b8', marginTop: 5 }}>{sub}</div>}
-      </div>
-    </div>
-  );
-};
 
 export const FinanceAds: React.FC = () => {
   const [data, setData] = useState<ReconciledMonth[]>([]);
@@ -176,43 +119,10 @@ export const FinanceAds: React.FC = () => {
     }
   }, [subTab]);
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 12 }}>
-        <RefreshCw size={32} className="animate-spin" style={{ color: '#0066fe' }} />
-        <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Loading ad data...</span>
-      </div>
-    );
-  }
+  if (loading) return <LoadingState label="Loading ad data…" />;
 
   if (error) {
-    return (
-      <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', borderRadius: 12, padding: 20, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <AlertTriangle size={20} color="#ef4444" style={{ flexShrink: 0, marginTop: 2 }} />
-        <div>
-          <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 700, color: '#991b1b' }}>Failed to retrieve reconciled Meta insights</h4>
-          <p style={{ margin: '4px 0 12px 0', fontSize: '0.83rem', color: '#b91c1c' }}>{error}</p>
-          <button 
-            onClick={() => fetchAdsData()} 
-            style={{ 
-              display: 'inline-flex', 
-              alignItems: 'center', 
-              gap: 6, 
-              padding: '6px 12px', 
-              background: '#ef4444', 
-              color: '#fff', 
-              border: 'none', 
-              borderRadius: 6, 
-              fontSize: '0.8rem', 
-              fontWeight: 700, 
-              cursor: 'pointer' 
-            }}
-          >
-            <RefreshCw size={12} /> Retry
-          </button>
-        </div>
-      </div>
-    );
+    return <ErrorState message="Failed to retrieve reconciled Meta insights" hint={error} onRetry={() => fetchAdsData()} />;
   }
 
   // 1. Process data for outliers (Meta pixel tracking anomaly)
@@ -493,7 +403,7 @@ export const FinanceAds: React.FC = () => {
 
           {/* Reconciled KPI Cards Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-            <KPICard 
+            <StatTile 
               label="True Ad Spend (BDT)" 
               value={fmt(totalSpendBDT)} 
               sub={`Converted $${totalSpendUSD.toLocaleString()} USD at ৳${exchangeRate}`} 
@@ -505,7 +415,7 @@ export const FinanceAds: React.FC = () => {
                 </span>
               }
             />
-            <KPICard 
+            <StatTile 
               label="Unified MER" 
               value={`${blendedMER}x`} 
               sub={`Total Store Revenue: ${fmt(totalStoreRevenue)}`} 
@@ -524,14 +434,14 @@ export const FinanceAds: React.FC = () => {
                 </span>
               }
             />
-            <KPICard 
+            <StatTile 
               label="Delivered CAC" 
               value={totalDeliveredOrders > 0 ? fmt(blendedDeliveredCAC) : '৳0'} 
               sub={`Fulfillment completed: ${totalDeliveredOrders} orders`} 
               color="#ea580c" 
               icon={Target} 
             />
-            <KPICard 
+            <StatTile 
               label="CM2 Net Margin" 
               value={fmt(totalCM2Profit)} 
               sub={`CM2 Margin Rate: ${blendedCM2Margin}%`} 
@@ -701,28 +611,28 @@ export const FinanceAds: React.FC = () => {
 
           {/* Top-of-Funnel KPIs */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-            <KPICard 
+            <StatTile 
               label="Blended CTR" 
               value={`${blendedCTR}%`} 
               sub={`Clicks: ${totalClicks.toLocaleString()} / Imps: ${totalImpressions.toLocaleString()}`} 
               color="#0066fe" 
               icon={MousePointerClick} 
             />
-            <KPICard 
+            <StatTile 
               label="Blended CPC" 
               value={fmtUSDDec(blendedCPC)} 
               sub="Cost per Link Click (USD)" 
               color="#10b981" 
               icon={Activity} 
             />
-            <KPICard 
+            <StatTile 
               label="Attributed ROAS" 
               value={`${hasOutlier ? blendedRoasNormalized : blendedRoasRaw}x`} 
               sub={hasOutlier ? `Normalized (${blendedRoasRaw}x raw)` : "Meta Pixel Attributed"} 
               color="#8b5cf6" 
               icon={Percent} 
             />
-            <KPICard 
+            <StatTile 
               label="Attributed CPA" 
               value={totalPurchases > 0 ? fmtUSDDec(blendedCPA) : '$0.00'} 
               sub={`Pixel Purchases: ${totalPurchases}`} 

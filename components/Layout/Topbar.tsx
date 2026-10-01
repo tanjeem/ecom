@@ -1,12 +1,14 @@
 import React from 'react';
-import { Search, Bell, Plus } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 
 interface TopbarProps {
   title: string;
+  searchQuery: string;
   onSearch: (query: string) => void;
+  onNewOrder: () => void;
 }
 
-export const Topbar: React.FC<TopbarProps> = ({ title, onSearch }) => {
+export const Topbar: React.FC<TopbarProps> = ({ title, searchQuery, onSearch, onNewOrder }) => {
   return (
     <header className="topbar">
       <div className="topbar-title-wrapper">
@@ -24,19 +26,12 @@ export const Topbar: React.FC<TopbarProps> = ({ title, onSearch }) => {
           <input
             id="global-search"
             type="search"
-            placeholder="Search orders, SKU..."
+            placeholder="Search orders, customer, phone…"
+            value={searchQuery}
             onChange={(e) => onSearch(e.target.value)}
           />
         </label>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label="Notifications"
-          title="Notifications"
-        >
-          <Bell size={14} style={{ color: '#475569' }} />
-        </button>
-        <button className="primary-action" type="button">
+        <button className="primary-action" type="button" onClick={onNewOrder}>
           <Plus size={14} />
           <span>New Order</span>
         </button>

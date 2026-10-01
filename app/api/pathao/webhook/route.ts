@@ -20,20 +20,40 @@ function wooBase() {
  * Fetch an order's currently stored Pathao consignment ID meta value and whether it
  * carries the "booked by us" marker, if any.
  */
-async function getOrderPathaoMeta(orderId: number): Promise<{ consignmentId: string | null; bookedByUs: boolean }> {
+async function getOrderPathaoMeta(orderId: number): Promise<{ consignmentId: string | null; bookedByUs: boolean; wooStatus: string | null }> {
   const res = await fetch(`${wooBase()}/wp-json/wc/v3/orders/${orderId}`, {
     headers: { Authorization: `Basic ${wooAuth()}`, Accept: 'application/json' },
     cache: 'no-store',
   });
-  if (!res.ok) return { consignmentId: null, bookedByUs: false };
-  const order = await res.json() as { meta_data?: Array<{ key: string; value: unknown }> };
+  if (!res.ok) return { consignmentId: null, bookedByUs: false, wooStatus: null };
+  const order = await res.json() as { status?: string; meta_data?: Array<{ key: string; value: unknown }> };
   const consignmentMeta = order.meta_data?.find((m) => m.key === 'ptc_consignment_id' || m.key === 'pathao_consignment_id');
   const bookedMeta = order.meta_data?.find((m) => m.key === 'ptc_booked_by_us');
   return {
     consignmentId: typeof consignmentMeta?.value === 'string' && consignmentMeta.value ? consignmentMeta.value : null,
     bookedByUs: bookedMeta?.value === '1' || bookedMeta?.value === 1,
+    wooStatus: order.status ?? null,
   };
 }
+
+/**
+ * Map a final Pathao delivery outcome to the WooCommerce order status it implies.
+ * Accepts either the human status ("Paid Return") or the event slug ("order.paid-return").
+ * Non-final states (pickup, in transit, hold, pickup failed…) return null and leave the order alone.
+ */
+function wooStatusForPathao(pathaoStatus: string): 'completed' | 'cancelled' | null {
+  const slug = pathaoStatus.toLowerCase().replace(/^order\./, '').trim().replace(/[\s_]+/g, '-');
+  if (['delivered', 'partial-delivery', 'exchange', 'exchanged'].includes(slug)) return 'completed';
+  if ([
+    'return', 'returned', 'paid-return', 'returned-to-merchant',
+    'pickup-cancel', 'pickup-cancelled',
+  ].includes(slug)) return 'cancelled';
+  return null;
+}
+
+// Only orders still in a pre-delivery state are moved; anything set by hand
+// (completed, cancelled, refunded…) is never overwritten by a courier event.
+const AUTO_TRANSITION_FROM = new Set(['processing', 'on-hold', 'pending', 'packed', 'dispatched']);
 
 /**
  * Find WooCommerce order ID by consignment ID stored in meta.
@@ -94,6 +114,16 @@ async function findWooOrderId(consignmentId: string, merchantOrderId?: string): 
  * Update WooCommerce order meta with latest Pathao status + consignment ID.
  */
 async function updateWooOrderMeta(orderId: number, consignmentId: string, status: string) {
+  const nextWooStatus = wooStatusForPathao(status);
+  let wooStatusUpdate: string | undefined;
+  if (nextWooStatus) {
+    const { wooStatus } = await getOrderPathaoMeta(orderId);
+    if (wooStatus && wooStatus !== nextWooStatus && AUTO_TRANSITION_FROM.has(wooStatus)) {
+      wooStatusUpdate = nextWooStatus;
+      console.log(`[Pathao Webhook] Order #${orderId}: "${status}" moves WooCommerce status ${wooStatus} → ${nextWooStatus}`);
+    }
+  }
+
   const metaData = [
     { key: 'ptc_consignment_id', value: consignmentId },
     { key: 'ptc_status', value: status },
@@ -109,7 +139,7 @@ async function updateWooOrderMeta(orderId: number, consignmentId: string, status
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify({ meta_data: metaData }),
+    body: JSON.stringify({ meta_data: metaData, ...(wooStatusUpdate ? { status: wooStatusUpdate } : {}) }),
     cache: 'no-store',
   });
 
@@ -150,8 +180,11 @@ export async function POST(request: NextRequest) {
   const event           = typeof body.event            === 'string' ? body.event            : '';
   const consignmentId   = typeof body.consignment_id   === 'string' ? body.consignment_id   :
                           typeof body.consignment_i_d  === 'string' ? body.consignment_i_d  : '';
+  // Pathao status-update events don't always carry order_status; fall back to the
+  // event slug itself ("order.paid-return" → "paid-return") so the update isn't dropped.
   const orderStatus     = typeof body.order_status     === 'string' ? body.order_status     :
-                          typeof body.status            === 'string' ? body.status            : '';
+                          typeof body.status            === 'string' ? body.status            :
+                          event.startsWith('order.') && event !== 'order.created' ? event.slice('order.'.length) : '';
   const merchantOrderId = typeof body.merchant_order_id === 'string' ? body.merchant_order_id :
                           typeof body.order_id          === 'string' ? body.order_id          : '';
   const storeId         = typeof body.store_id === 'number' ? body.store_id :

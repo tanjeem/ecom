@@ -1,436 +1,377 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { RefreshCw, AlertCircle, Download, Truck } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
-import type { PLData } from '@/lib/types/finance';
-import { fmt, fmtFull, MONTHS_FULL, MONTHS_SHORT, inputStyle, selectStyle } from './shared';
+import React, { useMemo, useState } from 'react';
+import { Download, Printer, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend, LabelList,
+} from 'recharts';
+import type { PLBreakdown, FinanceSummary } from '@/lib/finance/types';
+import { plFromCats } from '@/lib/finance/pl';
+import { periodLabel } from '@/lib/finance/periods';
+import { fmt, fmtFull, fmtCompact, fmtPct, CHART, btnSecondary } from './shared';
+import { Card, LoadingState, ErrorState, Delta, KpiCard, Segmented, pctChange } from './ui';
+import { usePeriod, useFinanceSummary, GranularityToggle } from './period';
 
-const PLRow = ({ label, value, indent = false, bold = false, separator = false, color }: {
-  label: string; value: number | null; indent?: boolean; bold?: boolean; separator?: boolean; color?: string;
-}) => (
-  <>
-    {separator && <div style={{ borderBottom: '1px solid #e2e7ee', margin: '2px 0' }} />}
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `6px 0 6px ${indent ? '18px' : '0'}`, gap: 8 }}>
-      <span style={{ fontSize: bold ? '0.85rem' : '0.82rem', fontWeight: bold ? 800 : 500, color: color || (bold ? '#0f172a' : '#374151'), minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {label}
-      </span>
-      <span style={{ fontSize: bold ? '0.88rem' : '0.82rem', fontWeight: bold ? 800 : 500, color: color || (bold ? '#0f172a' : '#374151'), whiteSpace: 'nowrap', flexShrink: 0 }}>
-        {value !== null ? fmtFull(value) : '—'}
-      </span>
-    </div>
-  </>
-);
+// ─── line definitions ─────────────────────────────────────────────────────────
 
-const SectionHeader = ({ label }: { label: string }) => (
-  <div style={{ padding: '12px 0 4px', fontSize: '0.65rem', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', borderTop: '2px solid #0f172a', marginTop: 4 }}>
-    {label}
-  </div>
-);
+type Kind = 'revenue' | 'cost' | 'profit' | 'pct';
+type Line =
+  | { section: string }
+  | { label: string; get: (pl: PLBreakdown) => number; kind: Kind; indent?: boolean; total?: boolean; highlight?: boolean };
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null;
+const LINES: Line[] = [
+  { section: 'Revenue' },
+  { label: 'Pathao COD (invoiced)', get: pl => pl.revenue.pathao_cod, kind: 'revenue', indent: true },
+  { label: 'Prepaid sales (bKash / cash)', get: pl => pl.revenue.sales_prepaid, kind: 'revenue', indent: true },
+  { label: 'Other COD / direct', get: pl => pl.revenue.sales_cod, kind: 'revenue', indent: true },
+  { label: 'Other income', get: pl => pl.revenue.other_income, kind: 'revenue', indent: true },
+  { label: 'Total revenue', get: pl => pl.revenue.total, kind: 'revenue', total: true },
+  { section: 'Cost of goods sold' },
+  { label: 'Fabric', get: pl => pl.cogs.fabric, kind: 'cost', indent: true },
+  { label: 'Accessories', get: pl => pl.cogs.accessories, kind: 'cost', indent: true },
+  { label: 'Sewing / production', get: pl => pl.cogs.sewing, kind: 'cost', indent: true },
+  { label: 'Packaging', get: pl => pl.cogs.packaging_material, kind: 'cost', indent: true },
+  { label: 'Total COGS', get: pl => pl.cogs.total, kind: 'cost', total: true },
+  { label: 'Gross profit', get: pl => pl.gross_profit, kind: 'profit', highlight: true },
+  { label: 'Gross margin', get: pl => pl.gross_margin, kind: 'pct' },
+  { section: 'Operating expenses' },
+  { label: 'Meta ads', get: pl => pl.opex.ads_meta, kind: 'cost', indent: true },
+  { label: 'Google ads', get: pl => pl.opex.ads_google, kind: 'cost', indent: true },
+  { label: 'Photoshoot', get: pl => pl.opex.photoshoot, kind: 'cost', indent: true },
+  { label: 'Rent', get: pl => pl.opex.rent, kind: 'cost', indent: true },
+  { label: 'Salaries', get: pl => pl.opex.salary, kind: 'cost', indent: true },
+  { label: 'Pathao fees (invoiced)', get: pl => pl.opex.courier_fees, kind: 'cost', indent: true },
+  { label: 'Transport', get: pl => pl.opex.transport, kind: 'cost', indent: true },
+  { label: 'Miscellaneous', get: pl => pl.opex.miscellaneous, kind: 'cost', indent: true },
+  { label: 'Total operating expenses', get: pl => pl.opex.total, kind: 'cost', total: true },
+  { label: 'Net profit', get: pl => pl.net_profit, kind: 'profit', highlight: true },
+  { label: 'Net margin', get: pl => pl.net_margin, kind: 'pct' },
+];
+
+const isSection = (l: Line): l is { section: string } => 'section' in l;
+const fmtVal = (v: number, kind: Kind, full = false) => (kind === 'pct' ? fmtPct(v) : full ? fmtFull(v) : fmt(v));
+
+function exportCSV(rows: (string | number)[][], filename: string) {
+  const esc = (v: string | number) => {
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const blob = new Blob([rows.map(r => r.map(esc).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── main ─────────────────────────────────────────────────────────────────────
+
+export const FinanceReports: React.FC = () => {
+  const period = usePeriod();
+  const { range, compareRange, chartGranularity, compareText } = period;
+  const cur = useFinanceSummary(range, chartGranularity);
+  const prev = useFinanceSummary(compareRange, chartGranularity);
+  const [hideEmpty, setHideEmpty] = useState(true);
+  const [view, setView] = useState<'statement' | 'breakdown'>('statement');
+
+  const data = cur.data;
+  const p = prev.data;
+
+  const bucketPLs = useMemo(() => (data ? data.series.map(s => plFromCats(s.cats)) : []), [data]);
+
+  const visibleLines = useMemo(() => {
+    if (!data) return LINES;
+    if (!hideEmpty) return LINES;
+    return LINES.filter(l => isSection(l) || l.total || l.highlight || l.kind === 'pct' || l.get(data.pl) !== 0 || (p && l.get(p.pl) !== 0));
+  }, [data, p, hideEmpty]);
+
+  if (!data && cur.loading) return <LoadingState label="Building P&L…" />;
+  if (!data && cur.error) return <ErrorState message="Could not build the report" hint={cur.error} onRetry={cur.reload} />;
+  if (!data) return null;
+
+  const pl = data.pl;
+  const title = `Profit & Loss — ${period.label}`;
+  const compareTitle = compareRange ? periodLabel('custom', compareRange) : null;
+
+  const marginSeries = data.series.map((s, i) => ({
+    label: s.label,
+    gross: bucketPLs[i].revenue.total ? Number(bucketPLs[i].gross_margin.toFixed(1)) : null,
+    net: bucketPLs[i].revenue.total ? Number(bucketPLs[i].net_margin.toFixed(1)) : null,
+  }));
+
+  const waterfall = (() => {
+    const steps = [
+      { name: 'Revenue', base: 0, value: pl.revenue.total, fill: CHART.revenue, shown: pl.revenue.total },
+      { name: 'COGS', base: Math.max(pl.gross_profit, 0), value: Math.min(pl.cogs.total, pl.revenue.total), fill: CHART.expenses, shown: -pl.cogs.total },
+      { name: 'Gross profit', base: 0, value: Math.max(pl.gross_profit, 0), fill: CHART.groups.overhead, shown: pl.gross_profit },
+      { name: 'Operating', base: Math.max(pl.net_profit, 0), value: Math.max(Math.min(pl.opex.total, pl.gross_profit), 0), fill: CHART.expenses, shown: -pl.opex.total },
+      { name: 'Net profit', base: 0, value: pl.net_profit, fill: pl.net_profit >= 0 ? CHART.revenue : '#b91c1c', shown: pl.net_profit },
+    ];
+    return steps;
+  })();
+
+  const downloadCSV = () => {
+    const rows: (string | number)[][] = [[title], [`${range.from} to ${range.to}`], []];
+    rows.push(['Line', 'This period', ...(p ? ['Comparison', 'Change %'] : []), '% of revenue']);
+    for (const l of LINES) {
+      if (isSection(l)) { rows.push([l.section.toUpperCase()]); continue; }
+      const v = l.get(pl);
+      const pv = p ? l.get(p.pl) : null;
+      rows.push([
+        l.label,
+        l.kind === 'pct' ? `${v.toFixed(2)}%` : v.toFixed(2),
+        ...(p ? [l.kind === 'pct' ? `${pv!.toFixed(2)}%` : pv!.toFixed(2), l.kind === 'pct' ? `${(v - pv!).toFixed(2)} pts` : (pctChange(v, pv)?.toFixed(1) ?? '')] : []),
+        l.kind !== 'pct' && pl.revenue.total ? `${((v / pl.revenue.total) * 100).toFixed(1)}%` : '',
+      ]);
+    }
+    if (data.series.length > 1) {
+      rows.push([], ['BREAKDOWN BY PERIOD'], ['Line', ...data.series.map(s => `${s.from} – ${s.to}`), 'Total']);
+      for (const l of LINES) {
+        if (isSection(l)) continue;
+        rows.push([l.label, ...bucketPLs.map(b => (l.kind === 'pct' ? `${l.get(b).toFixed(1)}%` : l.get(b).toFixed(2))), l.kind === 'pct' ? `${l.get(pl).toFixed(1)}%` : l.get(pl).toFixed(2)]);
+      }
+    }
+    exportCSV(rows, `pnl-${range.from}_to_${range.to}.csv`);
+  };
+
   return (
-    <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 8, padding: '8px 12px', fontSize: '0.78rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>{MONTHS_SHORT[(label as number) - 1]}</div>
-      {payload.map((p: any) => (
-        <div key={p.name} style={{ color: p.color, marginBottom: 2 }}>{p.name}: {fmt(p.value)}</div>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, opacity: cur.loading ? 0.65 : 1, transition: 'opacity 150ms ease' }}>
+      {cur.loading && <div className="fin-loading-bar" style={{ marginTop: -10 }} />}
+
+      {data.warnings.length > 0 && (
+        <div role="status" className="fin-no-print" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, fontSize: '0.78rem', color: '#92400e' }}>
+          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div>{data.warnings.join(' ')}</div>
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <KpiCard label="Revenue" value={fmt(pl.revenue.total)} delta={p ? pctChange(pl.revenue.total, p.pl.revenue.total) : undefined} sub={compareText} />
+        <KpiCard label="COGS" value={fmt(pl.cogs.total)} delta={p ? pctChange(pl.cogs.total, p.pl.cogs.total) : undefined} deltaGoodWhen="down"
+          sub={pl.revenue.total ? `${((pl.cogs.total / pl.revenue.total) * 100).toFixed(1)}% of revenue` : undefined} />
+        <KpiCard label="Gross profit" value={fmt(pl.gross_profit)} tone={pl.gross_profit >= 0 ? undefined : 'bad'}
+          delta={p ? pctChange(pl.gross_profit, p.pl.gross_profit) : undefined} sub={`${fmtPct(pl.gross_margin)} margin`} />
+        <KpiCard label="Operating expenses" value={fmt(pl.opex.total)} delta={p ? pctChange(pl.opex.total, p.pl.opex.total) : undefined} deltaGoodWhen="down"
+          sub={pl.revenue.total ? `${((pl.opex.total / pl.revenue.total) * 100).toFixed(1)}% of revenue` : undefined} />
+        <KpiCard label="Net profit" value={fmt(pl.net_profit)} tone={pl.net_profit >= 0 ? 'good' : 'bad'}
+          delta={p ? pctChange(pl.net_profit, p.pl.net_profit) : undefined} sub={`${fmtPct(pl.net_margin)} margin`} />
+      </div>
+
+      <div className="fin-grid-pl">
+        {/* Statement / breakdown */}
+        <Card
+          padding="18px 0 6px"
+          title={<span style={{ paddingLeft: 20 }}>{title}</span>}
+          subtitle={<span style={{ paddingLeft: 20, display: 'inline-block' }}>{range.from} → {range.to}{compareTitle ? ` · compared with ${compareTitle}` : ''}</span>}
+          action={
+            <div className="fin-no-print" style={{ display: 'flex', gap: 6, paddingRight: 16, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {data.series.length > 1 && (
+                <Segmented size="sm" value={view} onChange={setView} options={[{ id: 'statement', label: 'Statement' }, { id: 'breakdown', label: 'By period' }]} />
+              )}
+              <button type="button" onClick={() => setHideEmpty(h => !h)} title={hideEmpty ? 'Show empty lines' : 'Hide empty lines'} style={{ ...btnSecondary, padding: '5px 8px' }}>
+                {hideEmpty ? <Eye size={13} /> : <EyeOff size={13} />}
+              </button>
+              <button type="button" onClick={downloadCSV} style={{ ...btnSecondary, padding: '5px 9px', fontSize: '0.76rem' }}><Download size={13} /> CSV</button>
+              <button type="button" onClick={() => window.print()} style={{ ...btnSecondary, padding: '5px 9px', fontSize: '0.76rem' }}><Printer size={13} /> Print</button>
+            </div>
+          }
+        >
+          {view === 'statement' || data.series.length <= 1 ? (
+            <StatementTable lines={visibleLines} pl={pl} prev={p} />
+          ) : (
+            <BreakdownTable lines={visibleLines} buckets={data.series} bucketPLs={bucketPLs} total={pl} />
+          )}
+        </Card>
+
+        {/* Charts */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Card title="From revenue to profit" subtitle="Each bar starts where the previous one ended">
+            {pl.revenue.total === 0 && pl.expenses === 0 ? (
+              <div style={{ height: 230, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>No data for this period</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={waterfall} barCategoryGap="22%" margin={{ top: 20, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke={CHART.grid} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: CHART.axis }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: CHART.axis }} axisLine={false} tickLine={false} width={56} tickFormatter={fmtCompact} />
+                  <ReferenceLine y={0} stroke="#cbd5e1" />
+                  <Tooltip cursor={{ fill: 'rgba(148,163,184,0.12)' }} content={({ active, payload }: any) => active && payload?.length ? (
+                    <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 8, padding: '7px 11px', fontSize: '0.78rem', boxShadow: '0 6px 18px rgba(15,23,42,0.1)' }}>
+                      <b>{payload[0].payload.name}</b>: {fmt(payload[0].payload.shown)}
+                    </div>
+                  ) : null} />
+                  <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
+                  <Bar dataKey="value" stackId="w" radius={[4, 4, 0, 0]} maxBarSize={56}>
+                    {waterfall.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                    <LabelList dataKey="shown" position="top" formatter={(v: any) => fmtCompact(Number(v))} style={{ fontSize: 10, fill: '#334155', fontWeight: 700 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+
+          {data.series.length > 1 && (
+            <Card title="Margin trend" subtitle="Share of revenue kept, per period" action={<GranularityToggle />}>
+              {marginSeries.every(m => m.gross == null) ? (
+                <div style={{ height: 200, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>No revenue yet</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={marginSeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke={CHART.grid} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART.axis }} axisLine={false} tickLine={false} minTickGap={12} />
+                    {/* Capped at ±100%: one tiny-revenue bucket would otherwise flatten every other point */}
+                    <YAxis tick={{ fontSize: 11, fill: CHART.axis }} axisLine={false} tickLine={false} width={44} tickFormatter={v => `${v}%`}
+                      domain={[(min: number) => Math.max(-100, Math.floor(min / 10) * 10), 100]} allowDataOverflow />
+                    <ReferenceLine y={0} stroke="#cbd5e1" />
+                    <Tooltip formatter={(v: any, n: any) => [`${v}%`, n]} contentStyle={{ fontSize: '0.78rem', borderRadius: 8, border: '1px solid #e2e7ee' }} />
+                    <Legend iconType="plainline" wrapperStyle={{ fontSize: '0.74rem' }} />
+                    <Line dataKey="gross" name="Gross margin" stroke={CHART.revenue} strokeWidth={2} dot={marginSeries.length <= 31 ? { r: 3 } : false} connectNulls type="monotone" />
+                    <Line dataKey="net" name="Net margin" stroke={CHART.expenses} strokeWidth={2} dot={marginSeries.length <= 31 ? { r: 3 } : false} connectNulls type="monotone" />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </Card>
+          )}
+
+          <UnitEconomics data={data} />
+        </div>
+      </div>
     </div>
   );
 };
 
-interface PathaoMonthly {
-  deliveredAmount: number;
-  deliveredCount: number;
-  inProcess: number;
-  inReview: number;
-  preparingInvoice: number;
-  paymentSent: number;
-  lastInvoiceDate: string | null;
-}
+// ─── tables ───────────────────────────────────────────────────────────────────
 
-export const FinanceReports: React.FC = () => {
-  const [pl, setPl] = useState<PLData | null>(null);
-  const [trend, setTrend] = useState<any[]>([]);
-  const [period, setPeriod] = useState<'month' | 'year'>('month');
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [pathaoMonthly, setPathaoMonthly] = useState<PathaoMonthly | null>(null);
-  const [pathaoMonths, setPathaoMonths] = useState<any[]>([]);
+const cellPad = '7px 10px';
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Build date range matching the selected period
-      const dateFrom = period === 'month'
-        ? `${year}-${String(month).padStart(2, '0')}-01`
-        : `${year}-01-01`;
-      const dateTo = period === 'month'
-        ? new Date(year, month, 0).toISOString().slice(0, 10)
-        : `${year}-12-31`;
+const StatementTable = ({ lines, pl, prev }: { lines: Line[]; pl: PLBreakdown; prev: FinanceSummary | null }) => (
+  <div style={{ overflowX: 'auto' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: prev ? 500 : 340 }}>
+      <thead>
+        <tr style={{ color: '#64748b', fontSize: '0.66rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <th style={{ textAlign: 'left', padding: cellPad, paddingLeft: 20, fontWeight: 800 }}>Line</th>
+          <th style={{ textAlign: 'right', padding: cellPad, fontWeight: 800 }}>This period</th>
+          {prev && <th style={{ textAlign: 'right', padding: cellPad, fontWeight: 800 }}>Comparison</th>}
+          {prev && <th style={{ textAlign: 'right', padding: cellPad, fontWeight: 800 }}>Change</th>}
+          <th style={{ textAlign: 'right', padding: cellPad, paddingRight: 20, fontWeight: 800 }}>% rev</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((l, i) => {
+          if (isSection(l)) {
+            return (
+              <tr key={`s${i}`}>
+                <td colSpan={prev ? 5 : 3} style={{ padding: '14px 20px 4px', fontSize: '0.64rem', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{l.section}</td>
+              </tr>
+            );
+          }
+          const v = l.get(pl);
+          const pv = prev ? l.get(prev.pl) : null;
+          const strong = l.total || l.highlight;
+          const bg = l.highlight ? (v >= 0 ? '#f0fdf4' : '#fef2f2') : undefined;
+          const color = l.highlight ? (v >= 0 ? '#15803d' : '#b91c1c') : strong ? '#0f172a' : '#334155';
+          return (
+            <tr key={l.label} style={{ background: bg, borderTop: l.total ? '1px solid #e2e7ee' : undefined }}>
+              <td style={{ padding: cellPad, paddingLeft: l.indent ? 34 : 20, fontWeight: strong ? 800 : l.kind === 'pct' ? 500 : 500, color: l.kind === 'pct' ? '#64748b' : color, fontStyle: l.kind === 'pct' ? 'italic' : undefined }}>{l.label}</td>
+              <td style={{ padding: cellPad, textAlign: 'right', fontWeight: strong ? 800 : 500, color: l.kind === 'pct' ? '#64748b' : color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtVal(v, l.kind)}</td>
+              {prev && <td style={{ padding: cellPad, textAlign: 'right', color: '#94a3b8', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtVal(pv!, l.kind)}</td>}
+              {prev && (
+                <td style={{ padding: cellPad, textAlign: 'right' }}>
+                  {l.kind === 'pct'
+                    ? <Delta value={v - pv!} points goodWhen="up" />
+                    : (v !== 0 || pv !== 0) && <Delta value={pctChange(v, pv)} goodWhen={l.kind === 'cost' ? 'down' : 'up'} />}
+                </td>
+              )}
+              <td style={{ padding: cellPad, paddingRight: 20, textAlign: 'right', color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                {l.kind !== 'pct' && pl.revenue.total ? `${((v / pl.revenue.total) * 100).toFixed(1)}%` : ''}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
 
-      const params = new URLSearchParams({ period, year: String(year), month: String(month) });
-      const [plRes, pathaoRes, pathaoMonthsRes] = await Promise.allSettled([
-        fetch(`/api/finance/reports?${params}`).then(r => r.json()),
-        fetch(`/api/pathao/metrics?from=${dateFrom}&to=${dateTo}`).then(r => r.json()),
-        fetch('/api/pathao/monthly').then(r => r.json()),
-      ]);
-
-      if (plRes.status === 'rejected') throw new Error(String(plRes.reason));
-      const plJson = plRes.value;
-      if (plJson.error) throw new Error(plJson.error);
-      setPl(plJson.pl);
-      setTrend(plJson.trend || []);
-
-      if (pathaoRes.status === 'fulfilled') {
-        const pj = pathaoRes.value;
-        setPathaoMonthly({
-          deliveredAmount: pj.orderSummary?.delivered?.amount ?? 0,
-          deliveredCount:  pj.orderSummary?.delivered?.count ?? 0,
-          inProcess:       pj.invoiceSummary?.paymentInProcess ?? 0,
-          inReview:        pj.invoiceSummary?.paymentInReview ?? 0,
-          preparingInvoice: pj.invoiceSummary?.paymentPreparingForInvoice ?? 0,
-          paymentSent:     pj.invoiceSummary?.paymentSent ?? 0,
-          lastInvoiceDate: pj.invoiceSummary?.lastInvoiceDate ?? null,
-        });
-      }
-
-      if (pathaoMonthsRes.status === 'fulfilled') {
-        const j = pathaoMonthsRes.value;
-        if (j.months) setPathaoMonths(j.months);
-      }
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [period, year, month]);
-
-  const yearOptions = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
-
-  // Merge Pathao delivered revenue into P&L numbers
-  const effectivePl = pl ? (() => {
-    const pathaoRev = pathaoMonthly?.deliveredAmount ?? pl.revenue.pathao_payout;
-    const totalRev = pathaoRev + pl.revenue.sales_prepaid + pl.revenue.sales_cod + pl.revenue.other_income;
-    const grossProfit = totalRev - pl.cogs.total;
-    const netProfit = grossProfit - pl.opex.total;
-    return {
-      ...pl,
-      revenue: { ...pl.revenue, pathao_payout: pathaoRev, total: totalRev },
-      gross_profit: grossProfit,
-      gross_margin: totalRev > 0 ? (grossProfit / totalRev) * 100 : 0,
-      net_profit: netProfit,
-      net_margin: totalRev > 0 ? (netProfit / totalRev) * 100 : 0,
-    };
-  })() : null;
-
-  // Merge Pathao delivered revenue into trend for the yearly chart
-  const mergedTrend = trend.map(t => {
-    const monthKey = `${year}-${String(t.month).padStart(2, '0')}`;
-    const pathaoM = pathaoMonths.find(pm => pm.month === monthKey);
-    // Use Pathao delivered COD value. If 0 or absent, fallback to manual ledger revenue
-    const revenue = pathaoM ? pathaoM.delivered : t.revenue;
-    return { month: t.month, revenue, expenses: t.expenses, profit: revenue - t.expenses };
-  });
-  const trendHasData = mergedTrend.some(t => t.revenue > 0 || t.expenses > 0);
-
-  const downloadCSV = () => {
-    if (!effectivePl) return;
-    const ep = effectivePl;
-    const rows = [
-      ['Profit & Loss Statement', period === 'month' ? `${MONTHS_FULL[month - 1]} ${year}` : `Year ${year}`],
-      [],
-      ['REVENUE'],
-      ['Pathao COD Payouts', ep.revenue.pathao_payout],
-      ['Prepaid Sales (bKash / Cash)', ep.revenue.sales_prepaid],
-      ['Other COD / Direct', ep.revenue.sales_cod],
-      ['Other Income', ep.revenue.other_income],
-      ['Total Revenue', ep.revenue.total],
-      [],
-      ['COST OF GOODS SOLD'],
-      ['Fabric', ep.cogs.fabric],
-      ['Accessories', ep.cogs.accessories],
-      ['Sewing / Production', ep.cogs.sewing],
-      ['Packaging Materials', ep.cogs.packaging_material],
-      ['Total COGS', ep.cogs.total],
-      [],
-      ['Gross Profit', ep.gross_profit],
-      ['Gross Margin', `${ep.gross_margin.toFixed(2)}%`],
-      [],
-      ['OPERATING EXPENSES'],
-      ['Rent', ep.opex.rent],
-      ['Salary', ep.opex.salary],
-      ['Transport', ep.opex.transport],
-      ['Meta Ads', ep.opex.ads_meta],
-      ['Google Ads', ep.opex.ads_google],
-      ['Photoshoot', ep.opex.photoshoot],
-      ['Miscellaneous', ep.opex.miscellaneous],
-      ['Total OPEX', ep.opex.total],
-      [],
-      ['Net Profit', ep.net_profit],
-      ['Net Margin', `${ep.net_margin.toFixed(2)}%`],
-    ];
-    const csv = rows.map(r => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `pl-${period === 'month' ? `${year}-${String(month).padStart(2, '0')}` : year}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Controls */}
-      <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, padding: '14px 18px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-        <div className="segmented-control" style={{ background: '#f1f5f9' }}>
-          <button className={period === 'month' ? 'is-selected' : ''} onClick={() => setPeriod('month')} style={{ fontSize: '0.82rem' }}>Monthly</button>
-          <button className={period === 'year' ? 'is-selected' : ''} onClick={() => setPeriod('year')} style={{ fontSize: '0.82rem' }}>Yearly</button>
-        </div>
-        <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ ...selectStyle, width: 100 }}>
-          {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        {period === 'month' && (
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ ...selectStyle, width: 140 }}>
-            {MONTHS_FULL.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-          </select>
-        )}
-        <button onClick={load} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e7ee', borderRadius: 7, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
-          <RefreshCw size={13} /> Refresh
-        </button>
-        {effectivePl && (
-          <button onClick={downloadCSV} style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e7ee', borderRadius: 7, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
-            <Download size={13} /> Export CSV
-          </button>
-        )}
-      </div>
-
-      {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4rem', gap: 10, color: '#64748b', background: '#fff', borderRadius: 10, border: '1px solid #e2e7ee' }}>
-          <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} />
-          <span style={{ fontSize: '0.9rem' }}>Generating report...</span>
-        </div>
-      ) : error ? (
-        <div style={{ padding: '3rem', textAlign: 'center', background: '#fff', borderRadius: 10, border: '1px solid #e2e7ee' }}>
-          <AlertCircle size={24} color="#dc2626" style={{ marginBottom: 10 }} />
-          <p style={{ color: '#dc2626', fontSize: '0.85rem', margin: '0 0 8px' }}>{error}</p>
-          <p style={{ color: '#64748b', fontSize: '0.78rem', margin: 0 }}>Make sure the Supabase migration has been run.</p>
-        </div>
-      ) : !effectivePl ? null : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {/* Pathao panel */}
-          {pathaoMonthly && (
-            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '16px 18px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <Truck size={15} color="#0891b2" />
-                <span style={{ fontWeight: 800, fontSize: '0.85rem', color: '#0c4a6e' }}>
-                  Pathao — {period === 'month' ? MONTHS_FULL[month - 1] : `FY ${year}`}
-                </span>
-                {pathaoMonthly.lastInvoiceDate && (
-                  <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: '#64748b' }}>
-                    Last paid: {pathaoMonthly.lastInvoiceDate}
-                  </span>
-                )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, auto)', gap: 12, alignItems: 'center' }}>
-                <div style={{ background: '#fff', borderRadius: 8, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: '0.67rem', fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>
-                      Delivered COD — {period === 'month' ? MONTHS_FULL[month - 1] : `FY ${year}`}
-                    </div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#16a34a' }}>{fmt(pathaoMonthly.deliveredAmount)}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.67rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>Orders</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#0f172a' }}>{pathaoMonthly.deliveredCount}</div>
-                  </div>
-                </div>
-                {[
-                  { label: 'Payment Sent', value: pathaoMonthly.paymentSent, color: '#16a34a' },
-                  { label: 'In Process', value: pathaoMonthly.inProcess, color: '#d97706' },
-                  { label: 'In Review', value: pathaoMonthly.inReview, color: '#7c3aed' },
-                ].map(item => (
-                  <div key={item.label} style={{ background: '#fff', borderRadius: 7, padding: '12px 14px', minWidth: 110 }}>
-                    <div style={{ fontSize: '0.63rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>{item.label}</div>
-                    <div style={{ fontWeight: 800, fontSize: '1rem', color: item.color }}>{fmt(item.value)}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* KPI row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-            {[
-              { label: 'Total Revenue', value: fmt(effectivePl.revenue.total), color: '#16a34a' },
-              { label: 'Total COGS', value: fmt(effectivePl.cogs.total), color: '#7c3aed' },
-              { label: 'Gross Profit', value: `${fmt(effectivePl.gross_profit)} (${effectivePl.gross_margin.toFixed(1)}%)`, color: effectivePl.gross_profit >= 0 ? '#2563eb' : '#dc2626' },
-              { label: 'Net Profit', value: `${fmt(effectivePl.net_profit)} (${effectivePl.net_margin.toFixed(1)}%)`, color: effectivePl.net_profit >= 0 ? '#16a34a' : '#dc2626' },
-            ].map(item => (
-              <div key={item.label} style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 9, padding: '14px 16px' }}>
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#68707a', textTransform: 'uppercase', marginBottom: 6 }}>{item.label}</div>
-                <div style={{ fontSize: '1rem', fontWeight: 900, color: item.color }}>{item.value}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* P&L table + charts side by side */}
-          <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 16, alignItems: 'start' }}>
-
-            {/* P&L Statement */}
-            <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, padding: '20px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: '0.63rem', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>ThreadOps</div>
-                <h2 style={{ margin: '2px 0 0', fontSize: '0.9rem', fontWeight: 900, color: '#0f172a' }}>
-                  P&L — {period === 'month' ? `${MONTHS_FULL[month - 1]} ${year}` : `FY ${year}`}
-                </h2>
-              </div>
-              <div>
-                <SectionHeader label="Revenue" />
-                <PLRow label={`Pathao COD${pathaoMonthly ? ` (${pathaoMonthly.deliveredCount})` : ''}`} value={effectivePl.revenue.pathao_payout} indent />
-                <PLRow label="Prepaid / bKash / Cash" value={effectivePl.revenue.sales_prepaid} indent />
-                <PLRow label="Other COD / Direct" value={effectivePl.revenue.sales_cod} indent />
-                <PLRow label="Other Income" value={effectivePl.revenue.other_income} indent />
-                <PLRow label="Total Revenue" value={effectivePl.revenue.total} bold separator />
-
-                <SectionHeader label="COGS" />
-                <PLRow label="Fabric" value={effectivePl.cogs.fabric} indent />
-                <PLRow label="Accessories" value={effectivePl.cogs.accessories} indent />
-                <PLRow label="Sewing / Production" value={effectivePl.cogs.sewing} indent />
-                <PLRow label="Packaging" value={effectivePl.cogs.packaging_material} indent />
-                <PLRow label="Total COGS" value={effectivePl.cogs.total} bold separator />
-
-                <SectionHeader label="Gross Profit" />
-                <PLRow label={`${effectivePl.gross_margin.toFixed(1)}% margin`} value={effectivePl.gross_profit} bold color={effectivePl.gross_profit >= 0 ? '#16a34a' : '#dc2626'} />
-
-                <SectionHeader label="OPEX" />
-                <PLRow label="Rent" value={effectivePl.opex.rent} indent />
-                <PLRow label="Salaries" value={effectivePl.opex.salary} indent />
-                <PLRow label="Transport" value={effectivePl.opex.transport} indent />
-                <PLRow label="Meta Ads" value={effectivePl.opex.ads_meta} indent />
-                <PLRow label="Google Ads" value={effectivePl.opex.ads_google} indent />
-                <PLRow label="Photoshoot" value={effectivePl.opex.photoshoot} indent />
-                <PLRow label="Miscellaneous" value={effectivePl.opex.miscellaneous} indent />
-                <PLRow label="Total OPEX" value={effectivePl.opex.total} bold separator />
-
-                <SectionHeader label="Net Profit" />
-                <PLRow label={`${effectivePl.net_margin.toFixed(1)}% margin`} value={effectivePl.net_profit} bold color={effectivePl.net_profit >= 0 ? '#16a34a' : '#dc2626'} />
-              </div>
-            </div>
-
-            {/* Charts + breakdowns */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, padding: '18px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                <h3 style={{ margin: '0 0 14px', fontSize: '0.9rem', fontWeight: 800 }}>Monthly Trend — {year}</h3>
-                {trendHasData ? (
-                  <ResponsiveContainer width="100%" height={210}>
-                    <BarChart data={mergedTrend} barGap={2} barCategoryGap="30%">
-                      <CartesianGrid vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="month" tickFormatter={v => MONTHS_SHORT[v - 1]} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
-                      <Bar dataKey="revenue" name="Revenue" fill="#16a34a" radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="expenses" name="Expenses" fill="#f87171" radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="profit" name="Net Profit" fill="#60a5fa" radius={[3, 3, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div style={{ height: 210, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 6 }}>
-                    <span style={{ fontSize: '1.4rem' }}>📊</span>
-                    <span style={{ fontSize: '0.83rem' }}>No transactions logged for {year}</span>
-                    <span style={{ fontSize: '0.74rem' }}>Add expenses in Transactions to populate the chart</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Revenue Waterfall */}
-              {(() => {
-                const ep = effectivePl;
-                const netPos = Math.max(0, ep.net_profit);
-                const waterfallData = [
-                  { name: 'Revenue',      spacer: 0,                value: ep.revenue.total,   fill: '#16a34a' },
-                  { name: '− COGS',       spacer: ep.gross_profit >= 0 ? ep.gross_profit : 0,  value: ep.cogs.total,      fill: '#dc2626' },
-                  { name: 'Gross Profit', spacer: 0,                value: Math.max(0, ep.gross_profit), fill: '#2563eb' },
-                  { name: '− OPEX',       spacer: netPos,           value: ep.opex.total,      fill: '#f97316' },
-                  { name: 'Net Profit',   spacer: 0,                value: netPos,             fill: ep.net_profit >= 0 ? '#16a34a' : '#dc2626' },
-                ];
-                const hasData = ep.revenue.total > 0;
+const BreakdownTable = ({ lines, buckets, bucketPLs, total }: {
+  lines: Line[]; buckets: FinanceSummary['series']; bucketPLs: PLBreakdown[]; total: PLBreakdown;
+}) => (
+  <div style={{ overflowX: 'auto', maxHeight: 640 }}>
+    <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.76rem', minWidth: '100%' }}>
+      <thead>
+        <tr>
+          <th style={{ position: 'sticky', left: 0, top: 0, zIndex: 2, background: '#fff', textAlign: 'left', padding: '7px 12px 7px 20px', fontSize: '0.66rem', color: '#64748b', textTransform: 'uppercase', borderBottom: '1px solid #e2e7ee', minWidth: 190 }}>Line</th>
+          {buckets.map(b => (
+            <th key={b.key} title={`${b.from} → ${b.to}`} style={{ position: 'sticky', top: 0, background: '#fff', textAlign: 'right', padding: '7px 10px', fontSize: '0.68rem', color: '#64748b', borderBottom: '1px solid #e2e7ee', whiteSpace: 'nowrap' }}>{b.label}</th>
+          ))}
+          <th style={{ position: 'sticky', top: 0, background: '#f8fafc', textAlign: 'right', padding: '7px 16px 7px 10px', fontSize: '0.68rem', color: '#0f172a', borderBottom: '1px solid #e2e7ee' }}>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((l, i) => {
+          if (isSection(l)) {
+            return (
+              <tr key={`s${i}`}>
+                <td style={{ position: 'sticky', left: 0, background: '#fff', padding: '12px 12px 3px 20px', fontSize: '0.62rem', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{l.section}</td>
+                <td colSpan={buckets.length + 1} />
+              </tr>
+            );
+          }
+          const strong = l.total || l.highlight;
+          const rowBg = l.highlight ? '#f8fafc' : '#fff';
+          return (
+            <tr key={l.label}>
+              <td style={{ position: 'sticky', left: 0, background: rowBg, padding: '6px 12px', paddingLeft: l.indent ? 32 : 20, fontWeight: strong ? 800 : 500, color: l.kind === 'pct' ? '#64748b' : '#0f172a', whiteSpace: 'nowrap', borderTop: l.total ? '1px solid #e2e7ee' : undefined }}>{l.label}</td>
+              {bucketPLs.map((b, j) => {
+                const v = l.get(b);
+                const neg = l.kind !== 'cost' && v < 0;
                 return (
-                  <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, padding: '18px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                    <h3 style={{ margin: '0 0 14px', fontSize: '0.9rem', fontWeight: 800 }}>Revenue Waterfall</h3>
-                    {hasData ? (
-                      <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={waterfallData} barCategoryGap="30%">
-                          <CartesianGrid vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />
-                          <Tooltip formatter={(v: any, name: any) => name === 'spacer' ? ['', ''] : [`৳${Number(v).toLocaleString()}`, name as string]} contentStyle={{ fontSize: '0.78rem', borderRadius: 8, border: '1px solid #e2e7ee' }} />
-                          <Bar dataKey="spacer" stackId="a" fill="transparent" />
-                          <Bar dataKey="value" stackId="a" radius={[3, 3, 0, 0]}>
-                            {waterfallData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div style={{ height: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 6 }}>
-                        <span style={{ fontSize: '1.4rem' }}>📊</span>
-                        <span style={{ fontSize: '0.83rem' }}>No data for this period</span>
-                      </div>
-                    )}
-                  </div>
+                  <td key={j} style={{ background: rowBg, padding: '6px 10px', textAlign: 'right', fontWeight: strong ? 700 : 400, color: v === 0 ? '#cbd5e1' : neg ? '#b91c1c' : '#334155', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', borderTop: l.total ? '1px solid #e2e7ee' : undefined }}>
+                    {l.kind === 'pct' ? (b.revenue.total ? fmtPct(v) : '—') : v === 0 ? '–' : fmtCompact(v)}
+                  </td>
                 );
-              })()}
+              })}
+              <td style={{ background: '#f8fafc', padding: '6px 16px 6px 10px', textAlign: 'right', fontWeight: 800, color: l.kind !== 'cost' && l.get(total) < 0 ? '#b91c1c' : '#0f172a', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', borderTop: l.total ? '1px solid #e2e7ee' : undefined }}>
+                {fmtVal(l.get(total), l.kind)}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {[
-                  { title: 'COGS Breakdown', entries: effectivePl.cogs, total: effectivePl.cogs.total, color: '#7c3aed' },
-                  { title: 'OPEX Breakdown', entries: effectivePl.opex, total: effectivePl.opex.total, color: '#dc2626' },
-                ].map(({ title, entries, total, color }) => {
-                  const lineItems = Object.entries(entries)
-                    .filter(([k, v]) => k !== 'total' && (v as number) > 0)
-                    .sort((a, b) => (b[1] as number) - (a[1] as number));
-                  const topCat = lineItems[0]?.[0];
-                  return (
-                    <div key={title} style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 10, padding: '16px 18px' }}>
-                      <h4 style={{ margin: '0 0 10px', fontSize: '0.8rem', fontWeight: 800, color: '#0f172a' }}>{title}</h4>
-                      {lineItems.length === 0 ? (
-                        <p style={{ color: '#94a3b8', fontSize: '0.78rem', margin: 0 }}>Nothing logged yet</p>
-                      ) : lineItems.map(([cat, val]) => {
-                        const pct = total > 0 ? ((val as number) / total * 100) : 0;
-                        const isTop = cat === topCat;
-                        return (
-                          <div key={cat} style={{ marginBottom: 7, padding: isTop ? '6px 8px' : undefined, background: isTop ? `${color}08` : undefined, borderRadius: isTop ? 7 : undefined, border: isTop ? `1px solid ${color}20` : undefined }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: 3 }}>
-                              <span style={{ color: isTop ? color : '#374151', fontWeight: isTop ? 800 : 500 }}>
-                                {cat.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                {isTop && <span style={{ fontSize: '0.63rem', marginLeft: 5, opacity: 0.7 }}>▲ biggest</span>}
-                              </span>
-                              <span style={{ fontWeight: 700, color: isTop ? color : '#374151' }}>{fmt(val as number)}</span>
-                            </div>
-                            <div style={{ height: 4, background: '#f1f5f9', borderRadius: 99 }}>
-                              <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99, opacity: isTop ? 1 : 0.5 }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+/** Per-order economics — what one delivered order actually earns. */
+const UnitEconomics = ({ data }: { data: FinanceSummary }) => {
+  const n = data.orders.delivered.count;
+  if (!n) return null;
+  const pl = data.pl;
+  const per = (v: number) => v / n;
+  const rows = [
+    { label: 'Revenue per order', v: per(pl.revenue.total) },
+    { label: 'Production cost', v: -per(pl.cogs.total) },
+    { label: 'Ad cost (CAC)', v: -per(pl.opex.ads_meta + pl.opex.ads_google) },
+    { label: 'Courier', v: -per(pl.opex.courier_fees) },
+    { label: 'Overheads & other', v: -per(pl.opex.total - pl.opex.ads_meta - pl.opex.ads_google - pl.opex.courier_fees) },
+  ];
+  const profit = per(pl.net_profit);
+  return (
+    <Card title="Unit economics" subtitle={`Averaged over ${n} invoiced deliveries`}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.8rem' }}>
+        {rows.map(r => (
+          <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#334155' }}>{r.label}</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums', color: r.v < 0 ? '#64748b' : '#0f172a', fontWeight: 600 }}>{fmt(r.v)}</span>
           </div>
+        ))}
+        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e7ee', paddingTop: 7, marginTop: 2 }}>
+          <b>Profit per order</b>
+          <b style={{ color: profit >= 0 ? '#15803d' : '#b91c1c', fontVariantNumeric: 'tabular-nums' }}>{fmt(profit)}</b>
         </div>
-      )}
-    </div>
+      </div>
+    </Card>
   );
 };

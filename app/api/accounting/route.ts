@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getWooOrders } from "@/lib/integrations/woocommerce";
-import { pathaoFetch } from "@/lib/integrations/pathao";
+import { getAllWooOrders } from "@/lib/integrations/woocommerce";
+import { pathaoFetch, getPathaoInvoices } from "@/lib/integrations/pathao";
+import { dashboardCache } from "@/lib/cache";
 import type { CommerceOrder } from "@/lib/types/commerce";
 
 type InvoiceSummary = {
@@ -32,35 +33,53 @@ function getDateRange(period: Period): { after: string; label: string } {
   return { after: iso(new Date(now.getFullYear(), now.getMonth(), 1)), label: "This Month" };
 }
 
-async function fetchOrdersForPeriod(after: string): Promise<CommerceOrder[]> {
-  const statuses = ["processing", "on-hold", "completed"];
-  const results = await Promise.allSettled(
-    statuses.map((status) => {
-      const p = new URLSearchParams({ status, after });
-      return getWooOrders(p);
-    })
-  );
-  return results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
+
+// Every status that represents a real sale (custom "packed"/"dispatched" included)
+const REVENUE_STATUSES = "processing,on-hold,completed,packed,dispatched";
+// Woo's server is slow (~2-5s per page of orders), so lean on the cache;
+// a year's totals barely move within 10 minutes.
+const CACHE_TTL: Record<Period, number> = { week: 2 * 60 * 1000, month: 2 * 60 * 1000, year: 10 * 60 * 1000 };
 
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const period = (sp.get("period") ?? "month") as Period;
   const { after, label } = getDateRange(period);
 
-  const [ordersResult, invoiceResult] = await Promise.allSettled([
-    fetchOrdersForPeriod(after),
+  const cacheKey = `accounting_${period}_${after}`;
+  if (sp.get("refresh") !== "true") {
+    const cached = dashboardCache.get<any>(cacheKey);
+    if (cached) return NextResponse.json(cached);
+  }
+
+  const [ordersResult, invoiceResult, invoicesResult] = await Promise.allSettled([
+    getAllWooOrders(new URLSearchParams({
+      status: REVENUE_STATUSES, after, orderby: "date", order: "desc",
+      _fields: "id,number,status,total,date_created,line_items,fee_lines",
+    })),
     pathaoFetch<{ data: InvoiceSummary }>("/merchant/invoice-summary"),
+    // Invoices are paid a day or two after they're raised; look back a week and filter by payout date
+    getPathaoInvoices(shiftDate(after.slice(0, 10), -7)),
   ]);
 
   const orders: CommerceOrder[] = ordersResult.status === "fulfilled" ? ordersResult.value : [];
   const invoice: InvoiceSummary | null =
     invoiceResult.status === "fulfilled" ? invoiceResult.value.data : null;
 
+  // Cash Pathao actually paid out during the period
+  const paidInvoices = invoicesResult.status === "fulfilled"
+    ? invoicesResult.value.filter((i) => i.payment_status === "paid" && (i.paid_at ?? "").slice(0, 10) >= after.slice(0, 10))
+    : [];
+  const collectedInPeriod = paidInvoices.reduce((sum, i) => sum + (i.payable_amount || 0), 0);
+
   const revenueMTD = orders.reduce((sum, o) => sum + (o.total || 0), 0);
   const orderCount = orders.length;
 
-  const collected = invoice?.payment_sent ?? 0;
+  const collected = invoicesResult.status === "fulfilled" ? collectedInPeriod : invoice?.payment_sent ?? 0;
   const pathaoInProcess = invoice?.payment_in_process ?? 0;
   const pathaoInReview = invoice?.payment_in_review ?? 0;
   const pathaoPreparingInvoice = invoice?.payment_preparing_for_invoice ?? 0;
@@ -97,7 +116,7 @@ export async function GET(request: NextRequest) {
     },
     {
       label: "Last Payment Sent",
-      amount: collected,
+      amount: invoice?.payment_sent ?? 0,
       sub: invoice
         ? `${invoice.last_invoice_date} via ${invoice.payment_method_name}`
         : "No invoice data",
@@ -105,7 +124,7 @@ export async function GET(request: NextRequest) {
     },
   ];
 
-  return NextResponse.json({
+  const body = {
     label,
     revenueMTD,
     orderCount,
@@ -117,10 +136,16 @@ export async function GET(request: NextRequest) {
     lifetimeEarning,
     ledgerEntries,
     reconciliation,
-    isMock: ordersResult.status === "rejected",
+    paidInvoiceCount: paidInvoices.length,
     errors: {
       orders: ordersResult.status === "rejected" ? String(ordersResult.reason) : null,
       invoice: invoiceResult.status === "rejected" ? String(invoiceResult.reason) : null,
     },
-  });
+  };
+
+  // Don't cache a response that's missing data
+  if ([ordersResult, invoiceResult, invoicesResult].every((r) => r.status === "fulfilled")) {
+    dashboardCache.set(cacheKey, body, CACHE_TTL[period] ?? CACHE_TTL.month);
+  }
+  return NextResponse.json(body);
 }

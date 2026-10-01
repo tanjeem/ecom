@@ -32,10 +32,11 @@ type AccountingData = {
   lifetimeEarning: number;
   ledgerEntries: LedgerEntry[];
   reconciliation: ReconItem[];
-  isMock: boolean;
+  paidInvoiceCount: number;
+  errors?: { orders: string | null; invoice: string | null };
 };
 
-const fmt = (n: number) => `BDT ${n.toLocaleString()}`;
+const fmt = (n: number) => `BDT ${Math.round(n).toLocaleString()}`;
 
 const PERIOD_LABELS: Record<Period, string> = {
   week: 'Last 7 Days',
@@ -70,18 +71,34 @@ export const AccountingView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState<Period>('month');
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   useEffect(() => {
+    // Abort the previous request so a slow response can't overwrite a newer period
+    const controller = new AbortController();
     setIsLoading(true);
-    fetch(`/api/accounting?period=${period}`)
+    setLoadError(null);
+    fetch(`/api/accounting?period=${period}`, { signal: controller.signal })
       .then((r) => r.json())
-      .then((json) => setData(json as AccountingData))
-      .catch(console.error)
-      .finally(() => setIsLoading(false));
+      .then((json) => {
+        setData(json as AccountingData);
+        setIsLoading(false);
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setLoadError(e.message || 'Failed to load accounting data');
+        setIsLoading(false);
+      });
+    return () => controller.abort();
   }, [period]);
+
+  // Keep showing the previous figures while a new period loads
+  const showSkeleton = isLoading && !data;
+  const dataErrors = [data?.errors?.orders && 'WooCommerce orders', data?.errors?.invoice && 'Pathao settlement'].filter(Boolean);
 
   const kpis = [
     { label: 'Revenue', value: fmt(data?.revenueMTD ?? 0), sub: `${data?.orderCount ?? 0} orders`, color: '#2563eb' },
-    { label: 'COD Collected', value: fmt(data?.collected ?? 0), sub: 'Settled & paid by Pathao', color: '#16864d' },
+    { label: 'COD Collected', value: fmt(data?.collected ?? 0), sub: `Paid out by Pathao · ${data?.paidInvoiceCount ?? 0} payout${data?.paidInvoiceCount === 1 ? '' : 's'}`, color: '#16864d' },
     { label: 'COD Pending', value: fmt(data?.codPending ?? 0), sub: 'In review / processing', color: '#b46a08' },
     { label: 'Lifetime COD Earning', value: fmt(data?.lifetimeEarning ?? 0), sub: 'All-time via Pathao', color: '#6d4ed9' },
   ];
@@ -106,9 +123,15 @@ export const AccountingView: React.FC = () => {
         </span>
       </div>
 
-      <div className="kpi-grid">
+      {(loadError || dataErrors.length > 0) && (
+        <div role="alert" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '0.82rem' }}>
+          {loadError ?? `Couldn't load ${dataErrors.join(' and ')} — figures below may be incomplete.`}
+        </div>
+      )}
+
+      <div className="kpi-grid" style={{ opacity: isLoading && data ? 0.6 : 1, transition: 'opacity 150ms ease' }}>
         {kpis.map(({ label, value, sub, color }) => (
-          <KpiCard key={label} label={label} value={value} sub={sub} color={color} loading={isLoading} />
+          <KpiCard key={label} label={label} value={value} sub={sub} color={color} loading={showSkeleton} />
         ))}
       </div>
 
@@ -118,11 +141,12 @@ export const AccountingView: React.FC = () => {
           subtitle="WooCommerce orders as revenue entries (most recent 20)."
           className="wide-panel"
         >
-          {isLoading ? (
+          {showSkeleton ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#999' }}>Loading…</div>
           ) : (
             <div className="table-wrap">
-              <table>
+              {/* Global table min-width (1060px) is meant for the orders table */}
+              <table style={{ minWidth: 0 }}>
                 <thead>
                   <tr>
                     <th>Date</th>
@@ -136,8 +160,11 @@ export const AccountingView: React.FC = () => {
                     <tr key={`${entry.date}-${entry.account}-${entry.memo}`}>
                       <td>{entry.date}</td>
                       <td>{entry.account}</td>
-                      <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {entry.memo}
+                      <td>
+                        {/* max-width doesn't constrain a table cell; constrain an inner box instead */}
+                        <div title={entry.memo} style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {entry.memo}
+                        </div>
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 600 }}>
                         {entry.debit > 0 ? fmt(entry.debit) : '—'}
@@ -158,7 +185,7 @@ export const AccountingView: React.FC = () => {
         </Panel>
 
         <Panel title="Pathao COD Reconciliation" subtitle="Live settlement amounts from Pathao.">
-          {isLoading ? (
+          {showSkeleton ? (
             <div style={{ padding: '1rem', color: '#999' }}>Loading…</div>
           ) : (
             <div style={{ padding: '1rem' }}>

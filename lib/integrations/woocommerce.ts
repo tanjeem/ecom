@@ -68,6 +68,31 @@ async function wooFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   return data as T;
 }
 
+export type WooOrderLite = Pick<WooOrder, "id" | "status" | "total" | "date_created" | "meta_data">;
+
+/**
+ * Fetch every WooCommerce order created in [after, before) with only the fields
+ * finance needs. Used to reconstruct history Pathao no longer returns.
+ * Dates are YYYY-MM-DD (store local time).
+ */
+export async function getWooOrdersInRange(after: string, before: string): Promise<WooOrderLite[]> {
+  const all: WooOrderLite[] = [];
+  for (let page = 1; page <= 50; page++) {
+    const params = new URLSearchParams({
+      per_page: "100",
+      page: String(page),
+      status: "any",
+      after: `${after}T00:00:00`,
+      before: `${before}T00:00:00`,
+      _fields: "id,status,total,date_created,meta_data",
+    });
+    const rows = await wooFetch<WooOrderLite[]>(`/orders?${params}`);
+    all.push(...rows);
+    if (rows.length < 100) break;
+  }
+  return all;
+}
+
 function splitName(name: string) {
   const parts = name.trim().split(/\s+/);
   return {
@@ -132,6 +157,7 @@ export async function getWooOrdersPage(
   page: number,
   perPage: number,
   status?: string,
+  search?: string,
 ): Promise<{ orders: CommerceOrder[]; total: number; totalPages: number }> {
   if (!hasEnv(requiredWooEnv)) {
     return { orders: getMockOrders(), total: 3, totalPages: 1 };
@@ -148,6 +174,7 @@ export async function getWooOrdersPage(
     order: "desc",
   });
   if (status) params.set("status", status);
+  if (search) params.set("search", search);
 
   const response = await fetch(`${getWooBaseURL()}/wp-json/wc/v3/orders?${params}`, {
     headers: {
@@ -221,6 +248,39 @@ export async function getWooOrders(
     console.warn("Failed to fetch from WooCommerce, returning mock data:", error);
     return getMockOrders();
   }
+}
+
+/**
+ * Fetch every order matching `query` (status may be a comma list). Reads the
+ * page count from the first response, then loads the remaining pages in
+ * parallel. Throws on failure rather than falling back to mock data, so
+ * callers can tell the user.
+ */
+export async function getAllWooOrders(query: URLSearchParams): Promise<CommerceOrder[]> {
+  if (!hasEnv(requiredWooEnv)) throw new Error("WooCommerce credentials are not configured");
+
+  const auth = Buffer.from(
+    `${process.env.WOOCOMMERCE_CONSUMER_KEY}:${process.env.WOOCOMMERCE_CONSUMER_SECRET}`,
+  ).toString("base64");
+
+  const fetchPage = async (page: number) => {
+    const params = new URLSearchParams(query);
+    params.set("per_page", "100");
+    params.set("page", String(page));
+    const response = await fetch(`${getWooBaseURL()}/wp-json/wc/v3/orders?${params}`, {
+      headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.message || `WooCommerce request failed with ${response.status}`);
+    return { rows: data as WooOrder[], totalPages: Number(response.headers.get("X-WP-TotalPages") || 1) };
+  };
+
+  const first = await fetchPage(1);
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(0, first.totalPages - 1) }, (_, i) => fetchPage(i + 2)),
+  );
+  return [first, ...rest].flatMap((p) => p.rows).map(normalizeWooOrder);
 }
 
 function getMockOrders(): CommerceOrder[] {

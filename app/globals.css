@@ -1220,3 +1220,33 @@ tbody tr:hover {
   width: min(440px, 92vw);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.16);
 }
+
+/* ─── Finance ─────────────────────────────────────────────────────────── */
+.fin-menu-item:hover { background: #f1f5f9 !important; }
+.fin-row:hover td { background: #f8fafc; }
+.fin-row.is-selected td { background: #eff6ff; }
+.fin-row .fin-row-actions { opacity: 0; transition: opacity 120ms ease; }
+.fin-row:hover .fin-row-actions, .fin-row:focus-within .fin-row-actions { opacity: 1; }
+.fin-kpi { transition: box-shadow 150ms ease, transform 150ms ease; }
+.fin-kpi-click:hover { box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08); transform: translateY(-1px); }
+.fin-th-sort { cursor: pointer; user-select: none; }
+.fin-th-sort:hover { color: #0f172a !important; }
+.fin-loading-bar { position: relative; overflow: hidden; height: 2px; border-radius: 2px; }
+.fin-loading-bar::after {
+  content: ""; position: absolute; inset: 0; width: 40%;
+  background: #2a78d6; animation: fin-slide 1s ease-in-out infinite;
+}
+@keyframes fin-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.fin-grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.fin-grid-main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; }
+.fin-grid-pl { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) {
+  .fin-grid-main, .fin-grid-pl { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .fin-grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .fin-period-bar { position: static !important; }
+}
+@media print {
+  .fin-no-print, .sidebar, .topbar { display: none !important; }
+}
