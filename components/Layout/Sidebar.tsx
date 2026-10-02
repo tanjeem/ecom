@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { LayoutDashboard, PackageCheck, Boxes, Workflow, Coins, LogOut } from 'lucide-react';
 
 interface SidebarProps {
@@ -7,6 +7,10 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate }) => {
+  const [me, setMe] = useState<{ user: string | null; role: string } | null>(null);
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(setMe).catch(() => {});
+  }, []);
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'orders', label: 'Orders', icon: PackageCheck },
@@ -41,24 +45,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate }) => {
         ))}
       </nav>
 
-      <div className="sync-panel">
-        <span className="sync-dot"></span>
-        <div>
-          <strong>Last sync 4m ago</strong>
-          <span>WooCommerce, Pathao, bank, Meta</span>
-        </div>
-      </div>
-
       <button
         type="button"
-        className="nav-item"
+        className="nav-item nav-signout"
         onClick={async () => {
           await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
           window.location.href = '/login';
         }}
       >
         <LogOut size={20} />
-        <span>Sign out</span>
+        <span>
+          Sign out<span className="nav-extra">{me?.user ? ` (${me.user})` : ''}</span>
+          {me?.role === 'viewer' && (
+            <span style={{ marginLeft: 6, fontSize: '0.66rem', fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: '#fef3c7', color: '#92400e' }}>View only</span>
+          )}
+        </span>
       </button>
     </aside>
   );

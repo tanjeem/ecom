@@ -14,6 +14,7 @@ import { fmt, fmtCompact, fmtPct, CHART, getCategoryLabel } from './shared';
 import { Card, KpiCard, LoadingState, ErrorState, Segmented, pctChange, Delta } from './ui';
 import { usePeriod, useFinanceSummary, GranularityToggle } from './period';
 import { CashPositionCard, BudgetCard } from './OverviewPanels';
+import { AlertsPanel } from './AlertsPanel';
 
 // ─── chart helpers ────────────────────────────────────────────────────────────
 
@@ -194,11 +195,13 @@ export const FinanceOverview: React.FC<{ onOpenTab?: (tab: string) => void }> = 
         </div>
       )}
 
+      <AlertsPanel onOpenTab={onOpenTab} />
+
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-        <KpiCard label="Revenue" icon={TrendingUp} value={fmt(pl.revenue.total)}
+      <div className="fin-kpi-grid">
+        <KpiCard label="Collected revenue" icon={TrendingUp} value={fmt(pl.revenue.total)}
           delta={p ? pctChange(pl.revenue.total, p.pl.revenue.total) : undefined} compareValue={cmp(p?.pl.revenue.total)}
-          sub={compareText || `${orders.delivered.count} delivered orders`}
+          sub={compareText || `${orders.delivered.count} delivered orders on paid invoices`}
           spark={pastSeries.map(s => s.revenue)} sparkColor={CHART.revenue}
           onClick={() => onOpenTab?.('reports')} />
         <KpiCard label="Total costs" icon={Wallet} value={fmt(pl.expenses)}
@@ -475,7 +478,7 @@ export const FinanceOverview: React.FC<{ onOpenTab?: (tab: string) => void }> = 
       </div>
 
       <p style={{ margin: 0, fontSize: '0.7rem', color: '#94a3b8', lineHeight: 1.5 }}>
-        Pathao revenue follows paid Pathao invoices only: cash collected on invoiced deliveries, dated by invoice, with Pathao's invoiced fees as courier cost. Prepaid & direct sales come from the ledger.
+        Revenue is only the cash Pathao collected on paid invoices, dated by invoice, with Pathao's invoiced fees as courier cost. Income logged by hand (prepaid / direct) appears below operating profit as other income.
         Meta spend {data.sources.meta === 'api' ? 'comes from the Meta API (USD × ৳130 + 15% VAT)' : 'comes from logged entries (Meta API not connected)'}.
         Fixed costs ({data.sources.fixedCosts}) accrue daily up to today.
         {data.cogs.method === 'per_unit'

@@ -2,9 +2,10 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Plus, Trash2, Search, Truck, Smartphone, Banknote, Megaphone, Scissors, Pencil, Copy, X, Download,
+  Plus, Trash2, Search, Truck, Smartphone, Banknote, Megaphone, Scissors, Pencil, Copy, X, Download, Upload,
   ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Receipt, Check, Paperclip, Repeat,
 } from 'lucide-react';
+import { ImportDialog } from './ImportDialog';
 import type { FinTransaction, FinVendor } from '@/lib/types/finance';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, TRANSFER_CATEGORIES } from '@/lib/types/finance';
 import { todayISO } from '@/lib/finance/periods';
@@ -278,6 +279,7 @@ export const FinanceTransactions: React.FC = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editor, setEditor] = useState<FormState | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const { toasts, push, dismiss } = useToasts();
 
@@ -447,8 +449,12 @@ export const FinanceTransactions: React.FC = () => {
             <t.icon size={13} color="#64748b" /> {t.label}
           </button>
         ))}
+        <button type="button" onClick={() => setImporting(true)} title="Import a bank or bKash statement (CSV)"
+          style={{ ...btnSecondary, padding: '7px 11px', marginLeft: 'auto' }}>
+          <Upload size={13} /> Import statement
+        </button>
         <button type="button" onClick={() => exportCSV()} disabled={exporting || total === 0}
-          style={{ ...btnSecondary, padding: '7px 11px', marginLeft: 'auto', opacity: total === 0 ? 0.5 : 1 }}>
+          style={{ ...btnSecondary, padding: '7px 11px', opacity: total === 0 ? 0.5 : 1 }}>
           {exporting ? <Spinner size={13} /> : <Download size={13} />} Export CSV
         </button>
       </div>
@@ -615,6 +621,8 @@ export const FinanceTransactions: React.FC = () => {
           onSaved={(msg, keepOpen) => { push({ text: msg }); if (!keepOpen) setEditor(null); reload(); }}
         />
       )}
+      <ImportDialog open={importing} onClose={() => setImporting(false)}
+        onImported={count => { push({ text: `Imported ${count} transaction${count === 1 ? '' : 's'}` }); reload(); }} />
       <ToastStack toasts={toasts} dismiss={dismiss} />
     </div>
   );

@@ -107,7 +107,7 @@ function OrderDetailPanel({
         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', border: 'none', cursor: 'default', zIndex: 99 }}
       />
       <aside style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, width: 400,
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(400px, 100vw)',
         background: '#fff', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
         display: 'flex', flexDirection: 'column', zIndex: 100,
       }}>
@@ -676,7 +676,9 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
       {/* ── Floating selection bar ───────────────────────────────────────── */}
       {selectedOrders.length > 0 && (
         <div style={{
-          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          // Sits above the phone tab bar; on desktop that var is unset and it's 24px up
+          position: 'fixed', bottom: 'var(--selection-bar-bottom, 24px)', left: '50%', transform: 'translateX(-50%)',
+          maxWidth: 'calc(100vw - 24px)',
           background: '#1e293b', color: '#f8fafc', borderRadius: 10,
           padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16,
           boxShadow: '0 4px 24px rgba(0,0,0,0.25)', zIndex: 50, whiteSpace: 'nowrap',

@@ -76,8 +76,66 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({
 }) => {
   const allSelected = orders.length > 0 && selectedOrders.length === orders.length;
 
+  const statusSelect = (order: CommerceOrder) => {
+    const sc = STATUS_STYLE[order.status] ?? STATUS_STYLE.paid;
+    return (
+      <select
+        value={order.status}
+        aria-label={`Status of order ${order.id}`}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onStatusChange(order, e.target.value as OrderStatus)}
+        style={{ background: sc.bg, color: sc.color, border: 'none', borderRadius: 99, padding: '4px 8px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', outline: 'none' }}
+      >
+        {ORDER_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+      </select>
+    );
+  };
+
   return (
-    <div className="table-wrap" style={{ overflowX: 'auto' }}>
+    <>
+    {/* Phones: one card per order instead of a 9-column table */}
+    <div className="orders-cards">
+      {orders.length > 0 && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid #eef1f5', fontSize: '0.78rem', color: '#64748b' }}>
+          <input type="checkbox" checked={allSelected} onChange={(e) => onSelectAll(e.target.checked)} /> Select all on this page
+        </label>
+      )}
+      {orders.map((order) => {
+        const isSelected = selectedOrders.includes(order.id);
+        return (
+          <div key={order.id} role="button" tabIndex={0} onClick={() => onOrderClick(order)}
+            onKeyDown={(e) => { if (e.key === 'Enter') onOrderClick(order); }}
+            style={{ display: 'flex', gap: 10, padding: '12px 14px', borderBottom: '1px solid #eef1f5', background: isSelected ? '#eff6ff' : undefined, cursor: 'pointer' }}>
+            <input type="checkbox" aria-label={`Select order ${order.id}`} checked={isSelected}
+              onClick={(e) => e.stopPropagation()} onChange={(e) => onSelectionChange(order.id, e.target.checked)}
+              style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>{order.id} <span style={{ fontWeight: 500, color: '#94a3b8', fontSize: '0.75rem' }}>· {fmtDate(order.dateCreated)}</span></span>
+                {statusSelect(order)}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
+                <span style={{ fontSize: '0.86rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer}</span>
+                <span style={{ fontWeight: 800, fontSize: '0.9rem', whiteSpace: 'nowrap' }}>{order.payable ? `৳${order.payable.toLocaleString()}` : '—'}</span>
+              </div>
+              <div style={{ marginTop: 2 }} onClick={(e) => e.stopPropagation()}><PhoneCell raw={order.phone || ''} /></div>
+              <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: 4, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {[order.address, order.city].filter(Boolean).join(', ') || '—'}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 6, fontSize: '0.74rem' }}>
+                <span style={{ color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.items || '—'}</span>
+                <span style={{ color: pathaoColor(order.pathaoStatus || 'Not Booked'), fontWeight: 700, whiteSpace: 'nowrap' }}>{order.pathaoStatus || 'Not Booked'}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {orders.length === 0 && (
+        <div style={{ padding: '3rem', textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem' }}>No orders found.</div>
+      )}
+    </div>
+
+    <div className="table-wrap orders-table" style={{ overflowX: 'auto' }}>
       <table style={{ minWidth: 1000 }}>
         <thead>
           <tr>
@@ -170,5 +228,13 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({
         </div>
       )}
     </div>
+    <style>{`
+      .orders-cards { display: none; }
+      @media (max-width: 760px) {
+        .orders-cards { display: block; }
+        .orders-table { display: none; }
+      }
+    `}</style>
+    </>
   );
 };

@@ -7,7 +7,8 @@
 //   delivery, dated by the invoice. Pathao's invoiced fees are the courier
 //   cost, so revenue − fees equals the payouts exactly. Ledger `pathao_payout`
 //   rows are ignored (the invoices are the record of that cash). Prepaid /
-//   direct / other income still comes from the ledger.
+//   direct / other income from the ledger is kept out of revenue and added
+//   below operating profit (see plFromCats).
 // - Meta ad spend comes from the Meta API (daily, USD → BDT incl. VAT) and
 //   replaces manually logged `ads_meta` rows when available.
 // - Fixed costs accrue daily (monthly amount ÷ days in month) up to today, so

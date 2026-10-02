@@ -18,8 +18,14 @@ export async function proxy(req: NextRequest) {
 
   const session = await verifySession(req.cookies.get(SESSION_COOKIE)?.value);
   if (session) {
+    // View-only logins may read anything but not change data or run jobs
+    const writes = !['GET', 'HEAD', 'OPTIONS'].includes(req.method) || pathname.startsWith('/api/cron/');
+    if (session.role === 'viewer' && pathname.startsWith('/api/') && writes) {
+      return NextResponse.json({ error: 'This login is view-only.' }, { status: 403 });
+    }
     const headers = new Headers(req.headers);
     headers.set('x-auth-user', session.user);
+    headers.set('x-auth-role', session.role);
     return NextResponse.next({ request: { headers } });
   }
 

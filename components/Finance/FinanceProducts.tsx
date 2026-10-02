@@ -5,6 +5,7 @@ import { ArrowUp, ArrowDown, Check, X, Pencil, Package, Info } from 'lucide-reac
 import { fmt, fmtPct, inputStyle } from './shared';
 import { KpiCard, LoadingState, ErrorState, EmptyState, useToasts, ToastStack } from './ui';
 import { usePeriod, invalidateFinanceCache } from './period';
+import { StockPanel } from './StockPanel';
 
 type Product = {
   product_id: number; name: string; unitCost: number; specificCost: boolean;
@@ -87,7 +88,7 @@ export const FinanceProducts: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, opacity: loading ? 0.65 : 1 }}>
       {loading && <div className="fin-loading-bar" style={{ marginTop: -10 }} />}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+      <div className="fin-kpi-grid">
         <KpiCard label="Products sold" value={sold.length} sub={`${Math.round(totals.units)} units · ${label}`} />
         <KpiCard label="Product profit" value={fmt(totals.profit)} tone={totals.profit >= 0 ? 'good' : 'bad'} sub={`${totals.revenue ? fmtPct((totals.profit / totals.revenue) * 100) : '—'} after cost, fees, returns & ads`} />
         <KpiCard label="Most profitable" value={best ? best.name : '—'} sub={best ? `${fmt(best.profit)} profit · ${fmtPct(best.margin)}` : undefined} />
@@ -178,6 +179,7 @@ export const FinanceProducts: React.FC = () => {
         Revenue and Pathao fees come from paid invoices, split across an order’s items by WooCommerce line value. Returns come from return invoices.
         Ad spend ({fmt(data.adSpend)}) is shared out by revenue. Rent, salary and other overheads are not allocated to products.
       </p>
+      <StockPanel />
       <ToastStack toasts={toasts} dismiss={dismiss} />
     </div>
   );

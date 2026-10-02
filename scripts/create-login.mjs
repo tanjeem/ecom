@@ -1,8 +1,8 @@
 // Adds or updates a login in .env.local (AUTH_USERS), creating AUTH_SECRET
 // and CRON_SECRET on first run. Passwords are stored only as PBKDF2 hashes.
 //
-// Usage: node scripts/create-login.mjs <username> [password]
-//   Omit the password to type it hidden. Copy the printed AUTH_* values into
+// Usage: node scripts/create-login.mjs <username> [password] [--viewer]
+//   Omit the password to type it hidden. --viewer makes a read-only login. Copy the printed AUTH_* values into
 //   Vercel → Settings → Environment Variables for production.
 
 import fs from 'fs';
@@ -39,12 +39,14 @@ function readHidden(prompt) {
   });
 }
 
-const username = (process.argv[2] || '').trim().toLowerCase();
+const viewer = process.argv.includes('--viewer');
+const args = process.argv.slice(2).filter((a) => a !== '--viewer');
+const username = (args[0] || '').trim().toLowerCase();
 if (!/^[a-z0-9._@-]{2,64}$/.test(username)) {
-  console.error('Usage: node scripts/create-login.mjs <username> [password]   (letters, digits, . _ @ -)');
+  console.error('Usage: node scripts/create-login.mjs <username> [password] [--viewer]   (letters, digits, . _ @ -)');
   process.exit(1);
 }
-const password = process.argv[3] ?? await readHidden(`Password for ${username}: `);
+const password = args[1] ?? await readHidden(`Password for ${username}: `);
 if (password.length < 10) { console.error('Use at least 10 characters.'); process.exit(1); }
 
 let env = fs.existsSync(ENV) ? fs.readFileSync(ENV, 'utf8') : '';
@@ -59,9 +61,9 @@ if (!get('CRON_SECRET')) set('CRON_SECRET', b64url(crypto.getRandomValues(new Ui
 
 const users = new Map((get('AUTH_USERS') || '').split(';').filter(Boolean).map((e) => [e.slice(0, e.indexOf(':')), e.slice(e.indexOf(':') + 1)]));
 const existed = users.has(username);
-users.set(username, await hashPassword(password));
+users.set(username, `${await hashPassword(password)}${viewer ? ':viewer' : ''}`);
 set('AUTH_USERS', [...users].map(([u, h]) => `${u}:${h}`).join(';'));
 
 fs.writeFileSync(ENV, env);
-console.log(`${existed ? 'Updated' : 'Added'} login "${username}" in .env.local (${users.size} user${users.size > 1 ? 's' : ''}).`);
+console.log(`${existed ? 'Updated' : 'Added'} ${viewer ? 'view-only ' : ''}login "${username}" in .env.local (${users.size} user${users.size > 1 ? 's' : ''}).`);
 console.log('Restart the dev server, and set AUTH_SECRET, AUTH_USERS and CRON_SECRET in Vercel for production.');

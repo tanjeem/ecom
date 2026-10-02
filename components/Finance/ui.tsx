@@ -32,8 +32,8 @@ export const Card = ({
 }) => (
   <div style={{ ...SURFACE, padding, ...style }}>
     {(title || action) && (
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
-        <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
           {title && <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>{title}</div>}
           {subtitle && <div style={{ fontSize: '0.72rem', color: MUTED, marginTop: 3 }}>{subtitle}</div>}
         </div>

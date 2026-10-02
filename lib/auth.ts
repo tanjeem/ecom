@@ -1,6 +1,7 @@
 // Login for the whole app. Users come from the AUTH_USERS env var as
-// `username:pbkdf2.<iterations>.<salt>.<hash>` pairs separated by `;` (create
-// them with `node scripts/create-login.mjs`). Sessions are HMAC-signed cookies
+// `username:pbkdf2.<iterations>.<salt>.<hash>[:viewer]` entries separated by
+// `;` (create them with `node scripts/create-login.mjs`). A `:viewer` suffix
+// makes a read-only login: it can see everything but change nothing. Sessions are HMAC-signed cookies
 // keyed by AUTH_SECRET, verified in proxy.ts on every request.
 //
 // Uses only Web Crypto so it runs in the proxy and in route handlers alike.
@@ -52,11 +53,13 @@ async function verifyPassword(password: string, stored: string) {
   return safeEqual(await pbkdf2(password, fromB64url(salt), Number(iter)), fromB64url(hash));
 }
 
-function users(): Map<string, string> {
-  const map = new Map<string, string>();
+export type Role = 'admin' | 'viewer';
+
+function users(): Map<string, { hash: string; role: Role }> {
+  const map = new Map<string, { hash: string; role: Role }>();
   for (const entry of (process.env.AUTH_USERS || '').split(';')) {
-    const i = entry.indexOf(':');
-    if (i > 0) map.set(entry.slice(0, i).trim().toLowerCase(), entry.slice(i + 1).trim());
+    const [name, hash, role] = entry.split(':').map(x => x.trim());
+    if (name && hash) map.set(name.toLowerCase(), { hash, role: role === 'viewer' ? 'viewer' : 'admin' });
   }
   return map;
 }
@@ -64,7 +67,7 @@ function users(): Map<string, string> {
 /** Returns the canonical username on success. Always does the hashing work, so unknown users take as long as wrong passwords. */
 export async function checkCredentials(username: string, password: string): Promise<string | null> {
   const name = username.trim().toLowerCase();
-  const stored = users().get(name);
+  const stored = users().get(name)?.hash;
   const ok = await verifyPassword(password, stored || 'pbkdf2.210000.AAAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
   return stored && ok ? name : null;
 }
@@ -81,7 +84,7 @@ export async function createSession(username: string, days: number) {
   return `${payload}.${b64url(await hmac(payload))}`;
 }
 
-export async function verifySession(token: string | undefined | null): Promise<{ user: string } | null> {
+export async function verifySession(token: string | undefined | null): Promise<{ user: string; role: Role } | null> {
   if (!token || !process.env.AUTH_SECRET) return null;
   const [payload, sig] = token.split('.');
   if (!payload || !sig) return null;
@@ -89,9 +92,10 @@ export async function verifySession(token: string | undefined | null): Promise<{
     if (!safeEqual(await hmac(payload), fromB64url(sig))) return null;
     const data = JSON.parse(new TextDecoder().decode(fromB64url(payload)));
     if (typeof data.exp !== 'number' || data.exp < Date.now()) return null;
-    // A user removed from AUTH_USERS loses access immediately
-    if (!users().has(String(data.u))) return null;
-    return { user: String(data.u) };
+    // A user removed from AUTH_USERS loses access immediately; role changes apply at once too
+    const u = users().get(String(data.u));
+    if (!u) return null;
+    return { user: String(data.u), role: u.role };
   } catch {
     return null;
   }

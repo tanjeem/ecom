@@ -1251,3 +1251,67 @@ tbody tr:hover {
 @media print {
   .fin-no-print, .sidebar, .topbar { display: none !important; }
 }
+
+/* Finance: shared grids, scrolling tables and the phone layout */
+.fin-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.fin-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.fin-tabs { scrollbar-width: none; scroll-snap-type: x proximity; }
+.fin-tabs::-webkit-scrollbar { display: none; }
+.fin-tabs > button { scroll-snap-align: start; }
+@media (max-width: 760px) {
+  .fin-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .fin-kpi { padding: 11px 12px 10px !important; }
+  .fin-kpi > div:nth-child(2) { font-size: 1.15rem !important; }
+  .fin-tabs > button { padding: 9px 11px !important; font-size: 0.8rem !important; }
+  .fin-tabs > button svg { display: none; }
+  .fin-tab-actions { display: none !important; }
+}
+
+/* ─── App shell on phones: bottom tab bar ───────────────────────────────── */
+.nav-signout { margin-top: auto; }
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 40;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 2px;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .brand-lockup { display: none; }
+  .nav-stack {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 2px;
+    overflow: visible;
+  }
+  .nav-item,
+  .nav-signout {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-height: 52px;
+    margin-top: 0;
+    padding: 4px 2px;
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .nav-item span { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .nav-signout { flex: 0 0 56px; }
+  .nav-extra { display: none; }
+  /* Room for the tab bar so the last card isn't hidden behind it */
+  .workspace { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  :root { --selection-bar-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+}
+/* Inventory: six KPIs as 6 / 3 / 2 columns so none is left alone on a row */
+.inv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1280px) { .inv-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .inv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

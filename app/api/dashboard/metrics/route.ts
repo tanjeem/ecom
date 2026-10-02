@@ -83,6 +83,15 @@ function topProducts(orders: CommerceOrder[]) {
   return [...map.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 8);
 }
 
+/** Inside Dhaka by address (English or Bengali); Pathao's Dhaka rate (≤ ৳80) as a fallback. */
+const isDhaka = (address: string, deliveryFee: number) =>
+  /dhaka|ঢাকা/i.test(address || '') || (!address && deliveryFee > 0 && deliveryFee <= 80);
+
+const hoursBetween = (a: string, b: string) => {
+  const t = (Date.parse(b.replace(' ', 'T')) - Date.parse(a.replace(' ', 'T'))) / 3_600_000;
+  return Number.isFinite(t) && t >= 0 && t < 24 * 60 ? t : null;
+};
+
 async function courierSummary(from: string, to: string) {
   const all = await getPathaoPortalOrders();
   const inRange = all.filter((o) => {
@@ -90,14 +99,94 @@ async function courierSummary(from: string, to: string) {
     return d >= from && d <= to && o.order_type !== 'Return';
   });
   const out = { delivered: { count: 0, amount: 0 }, inTransit: { count: 0, amount: 0 }, returned: { count: 0, amount: 0 } };
+  const region = {
+    inside: { delivered: 0, returned: 0, amount: 0 },
+    outside: { delivered: 0, returned: 0, amount: 0 },
+  };
+  let fees = 0;
+  const deliveryHours: number[] = [];
   for (const o of inRange) {
     const amount = o.order_amount || 0;
-    if (DELIVERED.has(o.order_status)) { out.delivered.count++; out.delivered.amount += amount; }
-    else if (RETURNED.has(o.order_status)) { out.returned.count++; out.returned.amount += amount; }
-    else if (!NOT_SHIPPED.has(o.order_status)) { out.inTransit.count++; out.inTransit.amount += amount; }
+    const r = isDhaka(o.recipient_address, o.delivery_fee) ? region.inside : region.outside;
+    if (DELIVERED.has(o.order_status)) {
+      out.delivered.count++; out.delivered.amount += amount;
+      r.delivered++; r.amount += amount;
+      fees += o.total_fee || 0;
+      const h = o.order_status_updated_at ? hoursBetween(o.order_created_at, o.order_status_updated_at) : null;
+      if (h != null) deliveryHours.push(h);
+    } else if (RETURNED.has(o.order_status)) {
+      out.returned.count++; out.returned.amount += amount;
+      r.returned++;
+      fees += o.total_fee || 0;
+    } else if (!NOT_SHIPPED.has(o.order_status)) {
+      out.inTransit.count++; out.inTransit.amount += amount;
+    }
   }
   const closed = out.delivered.count + out.returned.count;
-  return { ...out, returnRate: closed > 0 ? (out.returned.count / closed) * 100 : null };
+  deliveryHours.sort((a, b) => a - b);
+  const rate = (g: { delivered: number; returned: number }) =>
+    g.delivered + g.returned > 0 ? (g.returned / (g.delivered + g.returned)) * 100 : null;
+  return {
+    ...out,
+    returnRate: closed > 0 ? (out.returned.count / closed) * 100 : null,
+    fees,
+    // Median, so a few parcels stuck for weeks don't skew it
+    medianDeliveryDays: deliveryHours.length ? deliveryHours[Math.floor(deliveryHours.length / 2)] / 24 : null,
+    regions: {
+      inside: { ...region.inside, returnRate: rate(region.inside) },
+      outside: { ...region.outside, returnRate: rate(region.outside) },
+    },
+  };
+}
+
+/** Open orders across the store (not just this period), grouped by how long they've waited. */
+async function dispatchBacklog() {
+  const open = await getAllWooOrders(new URLSearchParams({
+    status: 'processing,pending,packed,on-hold',
+    _fields: 'id,number,status,total,date_created,meta_data',
+  }));
+  const now = Date.now();
+  const buckets = { today: 0, oneToTwo: 0, threePlus: 0 };
+  let oldest: { id: string; days: number } | null = null;
+  for (const o of open) {
+    const days = (now - Date.parse(o.dateCreated || '')) / 86_400_000;
+    if (!Number.isFinite(days)) continue;
+    if (days < 1) buckets.today++;
+    else if (days < 3) buckets.oneToTwo++;
+    else buckets.threePlus++;
+    if (!oldest || days > oldest.days) oldest = { id: o.id, days };
+  }
+  return { total: open.length, ...buckets, oldest, value: open.reduce((s, o) => s + (o.total || 0), 0) };
+}
+
+/** Orders by weekday (0 = Sunday) and hour of day, in store time. */
+function orderTiming(orders: CommerceOrder[]) {
+  const grid = Array.from({ length: 7 }, () => Array(24).fill(0) as number[]);
+  for (const o of orders) {
+    if (o.status === 'returned' || !o.dateCreated) continue;
+    const [date, time = '00'] = o.dateCreated.split('T');
+    const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+    const hour = Number(time.slice(0, 2));
+    if (Number.isFinite(day) && hour >= 0 && hour < 24) grid[day][hour]++;
+  }
+  return grid;
+}
+
+const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL'];
+
+/** Units sold per size, from the trailing "- S/M/L…" on line item names. */
+function sizeMix(orders: CommerceOrder[]) {
+  const map = new Map<string, number>();
+  for (const o of orders) {
+    if (o.status === 'returned') continue;
+    for (const li of o.lineItems ?? []) {
+      const m = li.name.match(/\s-\s*([A-Za-z0-9]{1,4})\s*$/);
+      const size = m ? m[1].toUpperCase() : 'Other';
+      map.set(size, (map.get(size) ?? 0) + li.quantity);
+    }
+  }
+  const rank = (s: string) => (SIZE_ORDER.includes(s) ? SIZE_ORDER.indexOf(s) : s === 'Other' ? 99 : 50);
+  return [...map.entries()].map(([size, units]) => ({ size, units })).sort((a, b) => rank(a.size) - rank(b.size));
 }
 
 async function adSpend(from: string, to: string) {
@@ -134,7 +223,7 @@ export async function GET(request: NextRequest) {
     if (cached) return NextResponse.json(cached);
   }
 
-  const [cur, prev, courier, prevCourier, spend, prevSpend, summary, invoices] = await Promise.allSettled([
+  const [cur, prev, courier, prevCourier, spend, prevSpend, summary, invoices, backlog] = await Promise.allSettled([
     fetchOrders(from, to, true),
     hasCompare ? fetchOrders(cfrom, cto, false) : Promise.resolve(null),
     courierSummary(from, to),
@@ -143,6 +232,7 @@ export async function GET(request: NextRequest) {
     hasCompare ? adSpend(cfrom, cto) : Promise.resolve(null),
     pathaoFetch<{ data: InvoiceSummary }>('/merchant/invoice-summary'),
     getPathaoInvoices(addDays(from, -7)),
+    dispatchBacklog(),
   ]);
 
   const value = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === 'fulfilled' ? r.value : null);
@@ -175,6 +265,9 @@ export async function GET(request: NextRequest) {
     adSpend: value(spend),
     prevAdSpend: value(prevSpend),
     topProducts: topProducts(orders),
+    sizes: sizeMix(orders),
+    timing: orderTiming(orders),
+    backlog: value(backlog),
     payouts: {
       paidInPeriod: paid.reduce((s, i) => s + (i.payable_amount || 0), 0),
       payoutCount: paid.length,

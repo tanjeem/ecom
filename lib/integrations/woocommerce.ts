@@ -510,40 +510,53 @@ export async function getWooOrderLineItems(ids: number[]): Promise<Map<number, W
 export type WooStockProduct = {
   id: number;
   name: string;
+  sku: string;
+  image: string | null;
   price: number;
   stock: number;
-  variants: { id: number; size: string; stock: number }[];
+  variants: { id: number; size: string; sku: string; stock: number }[];
 };
 
 /** Stock on hand for every published product (variable products summed over their variations). */
 export async function getWooStockLevels(): Promise<WooStockProduct[]> {
-  type P = { id: number; name: string; price: string; type: string; stock_quantity: number | null; variations: number[] };
-  type V = { id: number; stock_quantity: number | null; attributes: { name: string; option: string }[] };
+  type P = { id: number; name: string; sku: string; price: string; type: string; stock_quantity: number | null; variations: number[]; images?: { src: string }[] };
+  type V = { id: number; sku: string; stock_quantity: number | null; attributes: { name: string; option: string }[] };
   const products: P[] = [];
   for (let page = 1; page <= 10; page++) {
-    const rows = await wooFetch<P[]>(`/products?per_page=100&page=${page}&status=publish&_fields=id,name,price,type,stock_quantity,variations`);
+    const rows = await wooFetch<P[]>(`/products?per_page=100&page=${page}&status=publish&_fields=id,name,sku,price,type,stock_quantity,variations,images`);
     products.push(...rows);
     if (rows.length < 100) break;
   }
   return Promise.all(products.map(async (p) => {
     let variants: WooStockProduct["variants"] = [];
     if (p.type === "variable" && p.variations.length) {
-      const vs = await wooFetch<V[]>(`/products/${p.id}/variations?per_page=100&_fields=id,stock_quantity,attributes`);
+      const vs = await wooFetch<V[]>(`/products/${p.id}/variations?per_page=100&_fields=id,sku,stock_quantity,attributes`);
       variants = vs.map((v) => ({
         id: v.id,
         size: v.attributes.map((a) => a.option).join(" / ") || "—",
+        sku: v.sku || "",
         stock: Math.max(0, v.stock_quantity ?? 0),
       }));
     }
     const stock = variants.length ? variants.reduce((s, v) => s + v.stock, 0) : Math.max(0, p.stock_quantity ?? 0);
-    return { id: p.id, name: p.name, price: Number.parseFloat(p.price) || 0, stock, variants };
+    return { id: p.id, name: p.name, sku: p.sku || "", image: p.images?.[0]?.src || null, price: Number.parseFloat(p.price) || 0, stock, variants };
   }));
 }
 
+/** Set the stock count of a product, or of one of its variations. Returns the saved quantity. */
+export async function setWooStock(productId: number, variationId: number | null, quantity: number): Promise<number> {
+  const path = variationId ? `/products/${productId}/variations/${variationId}` : `/products/${productId}`;
+  const saved = await wooFetch<{ stock_quantity: number | null }>(path, {
+    method: "PUT",
+    body: JSON.stringify({ manage_stock: true, stock_quantity: quantity }),
+  });
+  return saved.stock_quantity ?? quantity;
+}
+
 /** Units sold per product (and variation) on orders placed since `after` (YYYY-MM-DD), cancelled/refunded excluded. */
-export async function getWooUnitsSold(after: string): Promise<{ productId: number; variationId: number; quantity: number; date: string }[]> {
-  type O = { id: number; date_created: string; line_items: { product_id: number; variation_id: number; quantity: number }[] };
-  const out: { productId: number; variationId: number; quantity: number; date: string }[] = [];
+export async function getWooUnitsSold(after: string): Promise<{ productId: number; variationId: number; quantity: number; total: number; date: string }[]> {
+  type O = { id: number; date_created: string; line_items: { product_id: number; variation_id: number; quantity: number; total: string }[] };
+  const out: { productId: number; variationId: number; quantity: number; total: number; date: string }[] = [];
   for (let page = 1; page <= 50; page++) {
     const params = new URLSearchParams({
       after: `${after}T00:00:00`, per_page: "100", page: String(page),
@@ -553,10 +566,17 @@ export async function getWooUnitsSold(after: string): Promise<{ productId: numbe
     const rows = await wooFetch<O[]>(`/orders?${params}`);
     for (const o of rows) {
       for (const li of o.line_items || []) {
-        out.push({ productId: li.product_id, variationId: li.variation_id || 0, quantity: Number(li.quantity) || 0, date: o.date_created.slice(0, 10) });
+        out.push({ productId: li.product_id, variationId: li.variation_id || 0, quantity: Number(li.quantity) || 0, total: Number(li.total) || 0, date: o.date_created.slice(0, 10) });
       }
     }
     if (rows.length < 100) break;
   }
   return out;
+}
+
+/** Current stock count of a product or one of its variations, straight from WooCommerce. */
+export async function getWooStock(productId: number, variationId: number | null): Promise<number> {
+  const path = variationId ? `/products/${productId}/variations/${variationId}` : `/products/${productId}`;
+  const row = await wooFetch<{ stock_quantity: number | null }>(`${path}?_fields=stock_quantity`);
+  return row.stock_quantity ?? 0;
 }
