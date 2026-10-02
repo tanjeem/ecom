@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, RotateCcw, ChevronLeft, ChevronRight, Edit2, Check, X, Repeat2 } from 'lucide-react';
 import { fmt, MONTHS_FULL, inputStyle, selectStyle, btnPrimary, btnSecondary } from './shared';
 import { Spinner, LoadingState, EmptyState } from './ui';
+import { usePeriod } from './period';
 
 const OPEX_LABELS: Record<string, string> = {
   rent: 'Rent',
@@ -45,9 +46,10 @@ export const FinanceFixedCosts: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ label: '', category: 'rent', default_amount: '' });
 
-  const now = new Date();
-  const [selYear, setSelYear] = useState(now.getFullYear());
-  const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
+  // Opens on the month the shared period filter points at
+  const { range } = usePeriod();
+  const [selYear, setSelYear] = useState(Number(range.from.slice(0, 4)));
+  const [selMonth, setSelMonth] = useState(Number(range.from.slice(5, 7)));
   const [monthEdits, setMonthEdits] = useState<Record<string, string>>({});
 
   const monthKey = `${selYear}-${String(selMonth).padStart(2, '0')}`;

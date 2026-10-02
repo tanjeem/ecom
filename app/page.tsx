@@ -7,19 +7,15 @@ import { Drawer } from '@/components/Layout/Drawer';
 import { DashboardView } from '@/components/Views/DashboardView';
 import { OrdersView } from '@/components/Views/OrdersView';
 import { InventoryView } from '@/components/Views/InventoryView';
-import { AccountingView } from '@/components/Views/AccountingView';
-import { AdsView } from '@/components/Views/AdsView';
 import { ScaleOpsView } from '@/components/Views/ScaleOpsView';
 import { FinanceView } from '@/components/Views/FinanceView';
 
-type ViewType = 'dashboard' | 'orders' | 'inventory' | 'accounting' | 'ads' | 'scale' | 'finance';
+type ViewType = 'dashboard' | 'orders' | 'inventory' | 'finance' | 'scale';
 
 const viewTitles: Record<ViewType, string> = {
   dashboard: 'Dashboard',
   orders: 'Orders',
   inventory: 'Inventory',
-  accounting: 'Accounting',
-  ads: 'Meta Ads',
   scale: 'Scale Ops',
   finance: 'Finance Center',
 };
@@ -28,8 +24,6 @@ const viewComponents: Record<ViewType, React.ComponentType> = {
   dashboard: DashboardView,
   orders: OrdersView,
   inventory: InventoryView,
-  accounting: AccountingView,
-  ads: AdsView,
   scale: ScaleOpsView,
   finance: FinanceView,
 };
@@ -64,9 +58,13 @@ export default function Home() {
           onNewOrder={handleNewOrder}
         />
 
-        {activeView === 'orders'
-          ? <OrdersView newOrderSignal={newOrderSignal} searchQuery={searchQuery} />
-          : <CurrentView />}
+        {activeView === 'orders' ? (
+          <OrdersView newOrderSignal={newOrderSignal} searchQuery={searchQuery} />
+        ) : activeView === 'dashboard' ? (
+          <DashboardView onOpenOrders={() => setActiveView('orders')} />
+        ) : (
+          <CurrentView />
+        )}
       </main>
 
       <Drawer

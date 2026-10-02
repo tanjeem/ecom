@@ -1,306 +1,200 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getWooOrders } from '@/lib/integrations/woocommerce';
-import { pathaoFetch } from '@/lib/integrations/pathao';
+import { getAllWooOrders } from '@/lib/integrations/woocommerce';
+import { pathaoFetch, getPathaoPortalOrders, getPathaoInvoices } from '@/lib/integrations/pathao';
 import { fetchMetaCampaignInsights } from '@/lib/integrations/meta';
-import type { CommerceOrder } from '@/lib/types/commerce';
+import { metaUsdToBdt } from '@/lib/finance/types';
+import type { CommerceOrder, OrderStatus } from '@/lib/types/commerce';
+import { ORDER_STATUSES, STATUS_WOO_SLUGS } from '@/lib/orderStatus';
 import { dashboardCache } from '@/lib/cache';
 
-const FINAL_PATHAO_STATUSES = new Set([
-  'Delivered',
-  'Partial Delivery',
-  'Return',
-  'Delivery Failed',
-  'Paid Return',
-  'Returned to Merchant',
-  'Pickup Cancelled',
-  'Pickup Failed'
-]);
+// Dashboard for any date range (from/to, inclusive, YYYY-MM-DD) with an
+// optional comparison range (cfrom/cto). "Sales" here means orders placed,
+// excluding cancelled/failed/refunded — Finance's revenue is cash collected.
 
-function calcPct(current: number, previous: number): number {
-  if (previous === 0) return current > 0 ? 100 : 0;
-  return Math.round(((current - previous) / previous) * 100);
+const CACHE_TTL = 5 * 60 * 1000;
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const ALL_SLUGS = ORDER_STATUSES.flatMap((s) => STATUS_WOO_SLUGS[s]).join(',');
+
+const DELIVERED = new Set(['Delivered', 'Partial Delivery']);
+const RETURNED = new Set(['Return', 'Paid Return', 'Returned To Merchant', 'Returned to Merchant', 'Return In Transit', 'Delivery Failed']);
+const NOT_SHIPPED = new Set(['Pickup Cancel', 'Pickup Cancelled', 'Pickup Failed']);
+
+const addDays = (iso: string, n: number) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+function datesBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = from; d <= to && out.length < 4000; d = addDays(d, 1)) out.push(d);
+  return out;
 }
 
-function toISODate(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T00:00:00`;
+/** Orders placed in [from, to]. `full` adds line items and meta (needed for products and packed status). */
+function fetchOrders(from: string, to: string, full: boolean) {
+  return getAllWooOrders(new URLSearchParams({
+    status: ALL_SLUGS,
+    after: `${from}T00:00:00`,
+    before: `${addDays(to, 1)}T00:00:00`,
+    _fields: full ? 'id,number,status,total,date_created,line_items,fee_lines,meta_data' : 'id,status,total,date_created',
+  }));
 }
 
-function getDateRange(period: string, customAfter?: string, customBefore?: string) {
-  if (period === 'custom' && customAfter) {
-    return {
-      after: customAfter + 'T00:00:00',
-      before: customBefore ? customBefore + 'T23:59:59' : undefined,
-      label: customAfter + (customBefore ? ' → ' + customBefore : ''),
-      prevAfter: undefined as string | undefined,
-      prevBefore: undefined as string | undefined,
-    };
+function salesSummary(orders: CommerceOrder[], from: string, to: string) {
+  const sold = orders.filter((o) => o.status !== 'returned');
+  const revenue = sold.reduce((s, o) => s + (o.total || 0), 0);
+  const byDay = new Map<string, { revenue: number; orders: number }>();
+  for (const o of sold) {
+    const day = (o.dateCreated || '').slice(0, 10);
+    const b = byDay.get(day) ?? { revenue: 0, orders: 0 };
+    b.revenue += o.total || 0;
+    b.orders++;
+    byDay.set(day, b);
   }
-  const now = new Date();
-  if (period === 'today') {
-    const start = new Date(now); start.setHours(0,0,0,0);
-    const prev = new Date(now); prev.setDate(prev.getDate()-1); prev.setHours(0,0,0,0);
-    const prevEnd = new Date(prev); prevEnd.setHours(23,59,59,0);
-    return { after: toISODate(start), before: undefined, label: 'Today', prevAfter: toISODate(prev), prevBefore: prevEnd.toISOString() };
-  }
-  if (period === 'week') {
-    const start = new Date(now); start.setDate(now.getDate()-6); start.setHours(0,0,0,0);
-    const prev = new Date(start); prev.setDate(prev.getDate()-7);
-    const prevEnd = new Date(start); prevEnd.setDate(prevEnd.getDate()-1); prevEnd.setHours(23,59,59,0);
-    return { after: toISODate(start), before: undefined, label: 'Last 7 days', prevAfter: toISODate(prev), prevBefore: prevEnd.toISOString() };
-  }
-  if (period === 'month') {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const prevStart = new Date(now.getFullYear(), now.getMonth()-1, 1);
-    // Compare month-to-date with the same span of last month, not the whole month
-    const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
-    const prevEnd = new Date(now.getFullYear(), now.getMonth()-1, Math.min(now.getDate(), lastDayPrev), now.getHours(), now.getMinutes(), now.getSeconds());
-    return { after: toISODate(start), before: undefined, label: 'This month', prevAfter: toISODate(prevStart), prevBefore: prevEnd.toISOString() };
-  }
-  if (period === 'year') {
-    const start = new Date(now.getFullYear(), 0, 1);
-    const prevStart = new Date(now.getFullYear()-1, 0, 1);
-    const prevEnd = new Date(now); prevEnd.setFullYear(now.getFullYear()-1);
-    return { after: toISODate(start), before: undefined, label: 'This year', prevAfter: toISODate(prevStart), prevBefore: prevEnd.toISOString() };
-  }
-  return { after: undefined, before: undefined, label: 'All time', prevAfter: undefined, prevBefore: undefined };
+  return {
+    totals: {
+      revenue,
+      orders: sold.length,
+      aov: sold.length ? revenue / sold.length : 0,
+      cancelled: orders.length - sold.length,
+    },
+    daily: datesBetween(from, to).map((date) => ({ date, ...(byDay.get(date) ?? { revenue: 0, orders: 0 }) })),
+  };
 }
 
-async function fetchAll(after?: string, before?: string): Promise<CommerceOrder[]> {
-  const statuses = ['processing', 'on-hold', 'completed', 'pending'];
-  const results = await Promise.allSettled(
-    statuses.map((s) => {
-      const p = new URLSearchParams({ status: s });
-      if (after) p.set('after', after);
-      if (before) p.set('before', before);
-      // paginate only when we have a date window (bounded query); for open-ended
-      // "all time" queries cap at 500 orders per status to stay fast
-      return getWooOrders(p, { paginate: Boolean(after), perPage: 100 });
-    }),
-  );
-  return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-}
+/** Product name without the trailing size/variant ("Black | Zipper Jacket - XL" → "Black | Zipper Jacket"). */
+const baseProduct = (name: string) => name.replace(/\s+-\s+[^-]+$/, '').trim() || name;
 
-/**
- * Batch-fetch live consignment statuses from Pathao for orders that have a consignment ID.
- * Returns a map of consignmentId → live order_status string.
- * Requests are batched in parallel groups of 10 to avoid rate limits.
- */
-async function fetchLivePathaoStatuses(orders: CommerceOrder[]): Promise<Map<string, string>> {
-  const statusMap = new Map<string, string>();
-  
-  // Skip fetching live status for orders that already have a final status
-  const toFetch = orders.filter((o) => {
-    if (!o.pathaoConsignment) return false;
-    if (FINAL_PATHAO_STATUSES.has(o.pathaoStatus || '')) {
-      statusMap.set(o.pathaoConsignment, o.pathaoStatus || 'Not Booked');
-      return false;
+function topProducts(orders: CommerceOrder[]) {
+  const map = new Map<string, { name: string; units: number; revenue: number; orders: number }>();
+  for (const o of orders) {
+    if (o.status === 'returned') continue;
+    const seen = new Set<string>();
+    for (const li of o.lineItems ?? []) {
+      const name = baseProduct(li.name);
+      const p = map.get(name) ?? { name, units: 0, revenue: 0, orders: 0 };
+      p.units += li.quantity;
+      p.revenue += li.total;
+      if (!seen.has(name)) { p.orders++; seen.add(name); }
+      map.set(name, p);
     }
-    return true;
+  }
+  return [...map.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+}
+
+async function courierSummary(from: string, to: string) {
+  const all = await getPathaoPortalOrders();
+  const inRange = all.filter((o) => {
+    const d = o.order_created_at?.slice(0, 10);
+    return d >= from && d <= to && o.order_type !== 'Return';
   });
-
-  if (toFetch.length === 0) return statusMap;
-
-  const BATCH = 10;
-  for (let i = 0; i < toFetch.length; i += BATCH) {
-    const batch = toFetch.slice(i, i + BATCH);
-    const results = await Promise.allSettled(
-      batch.map((o) =>
-        pathaoFetch<{ code: number; data: { order_status: string } }>(`/orders/${o.pathaoConsignment}/info`)
-      )
-    );
-    for (let j = 0; j < batch.length; j++) {
-      const r = results[j];
-      const id = batch[j].pathaoConsignment!;
-      if (r.status === 'fulfilled' && r.value?.data?.order_status) {
-        statusMap.set(id, r.value.data.order_status);
-      } else {
-        // Fall back to cached status from WooCommerce meta
-        statusMap.set(id, batch[j].pathaoStatus || 'Not Booked');
-      }
-    }
+  const out = { delivered: { count: 0, amount: 0 }, inTransit: { count: 0, amount: 0 }, returned: { count: 0, amount: 0 } };
+  for (const o of inRange) {
+    const amount = o.order_amount || 0;
+    if (DELIVERED.has(o.order_status)) { out.delivered.count++; out.delivered.amount += amount; }
+    else if (RETURNED.has(o.order_status)) { out.returned.count++; out.returned.amount += amount; }
+    else if (!NOT_SHIPPED.has(o.order_status)) { out.inTransit.count++; out.inTransit.amount += amount; }
   }
-  return statusMap;
+  const closed = out.delivered.count + out.returned.count;
+  return { ...out, returnRate: closed > 0 ? (out.returned.count / closed) * 100 : null };
 }
 
-const PATHAO_STATUSES = [
-  'Not Booked',
-  'Ready',
-  'Pickup Requested', 'Assigned for Pickup', 'Pickup', 'Pickup Failed', 'Pickup Cancelled',
-  'At the Sorting HUB', 'In Transit', 'Received at Last Mile Hub', 'Assigned for Delivery',
-  'Delivered', 'Partial Delivery', 'Return', 'Delivery Failed',
-  'On Hold', 'Payment Invoice', 'Paid Return', 'Exchange',
-  'Return Id Created', 'Return In Transit', 'Returned to Merchant',
-];
+async function adSpend(from: string, to: string) {
+  const data = await fetchMetaCampaignInsights('custom', from, to);
+  // The Meta helper substitutes "[Mock]" campaigns when the API fails — never show those as real spend
+  if (data.campaigns.some((c) => c.name.includes('[Mock]'))) return null;
+  return metaUsdToBdt(data.campaigns.reduce((s, c) => s + c.spend, 0));
+}
+
+type InvoiceSummary = {
+  last_invoice_date: string;
+  payment_sent: number;
+  payment_method_name: string;
+  lifetime_earning: number;
+  payment_in_process: number;
+  payment_in_review: number;
+  payment_preparing_for_invoice: number;
+};
 
 export async function GET(request: NextRequest) {
-  try {
-    const sp = request.nextUrl.searchParams;
-    const period = sp.get('period') || 'month';
-    const customAfter = sp.get('after') || undefined;
-    const customBefore = sp.get('before') || undefined;
-    const forceRefresh = sp.get('refresh') === 'true' || sp.get('force') === 'true';
-
-    if (forceRefresh) {
-      console.log('[Cache] Force refresh requested, clearing cache.');
-      dashboardCache.clear();
-    }
-
-    const cacheKey = `dashboard_metrics_${period}_${customAfter || ''}_${customBefore || ''}`;
-    if (!forceRefresh) {
-      const cached = dashboardCache.get<any>(cacheKey);
-      if (cached) {
-        console.log(`[Cache] Serving metrics for period "${period}" from cache`);
-        return NextResponse.json(cached);
-      }
-    }
-
-    const { after, before, label, prevAfter, prevBefore } = getDateRange(period, customAfter, customBefore);
-
-    const [current, previous, allOrders, metaAds, invoiceSummaryResult] = await Promise.all([
-      fetchAll(after, before),
-      prevAfter ? fetchAll(prevAfter, prevBefore) : Promise.resolve([] as CommerceOrder[]),
-      // Fetch ALL orders (no date filter) for the "All Orders via webhook" grid only
-      fetchAll(),
-      fetchMetaCampaignInsights(period, after?.slice(0, 10), before?.slice(0, 10)),
-      pathaoFetch<{ data: any }>('/merchant/invoice-summary').catch(() => null),
-    ]);
-
-    // Live-fetch Pathao statuses for date-filtered orders (replaces stale ptc_status meta)
-    const liveStatusMap = await fetchLivePathaoStatuses(current);
-
-    const totalOrders = current.length;
-    const totalValue = current.reduce((s, o) => s + o.total, 0);
-    const processingOrders = current.filter((o) => o.status === 'paid').length;
-    const holdOrders = current.filter((o) => o.status === 'hold').length;
-    const returnedOrders = current.filter((o) => o.status === 'returned' || o.status === 'completed').length;
-    const avgOrderValue = totalOrders > 0 ? Math.round(totalValue / totalOrders) : 0;
-
-    const pTotalOrders = previous.length;
-    const pTotalValue = previous.reduce((s, o) => s + o.total, 0);
-    const pProcessing = previous.filter((o) => o.status === 'paid').length;
-    const pAvg = pTotalOrders > 0 ? Math.round(pTotalValue / pTotalOrders) : 0;
-
-    // Calculate WooCommerce margins
-    const grossMarginValue = current.reduce((sum, o) => {
-      const mPct = parseFloat(o.margin?.replace('%', '') || '0');
-      return sum + (o.total * (mPct / 100));
-    }, 0);
-    const avgMarginPct = totalValue > 0 ? Math.round((grossMarginValue / totalValue) * 100) : 0;
-
-    const pGrossMarginValue = previous.reduce((sum, o) => {
-      const mPct = parseFloat(o.margin?.replace('%', '') || '0');
-      return sum + (o.total * (mPct / 100));
-    }, 0);
-    const pAvgMarginPct = pTotalValue > 0 ? Math.round((pGrossMarginValue / pTotalValue) * 100) : 0;
-
-    const grossMarginValuePct = calcPct(grossMarginValue, pGrossMarginValue);
-    const avgMarginPctPct = calcPct(avgMarginPct, pAvgMarginPct);
-
-    // Sum Meta Ads performance
-    const totalAdSpend = metaAds.campaigns.reduce((sum, c) => sum + c.spend, 0);
-    const totalAdRevenue = metaAds.campaigns.reduce((sum, c) => sum + c.revenue, 0);
-    const blendedRoas = totalAdSpend > 0 ? parseFloat((totalAdRevenue / totalAdSpend).toFixed(2)) : 0;
-
-    // Calculate dynamic cash position from Pathao COD
-    const invoice = invoiceSummaryResult?.data;
-    const pathaoInReview = invoice?.payment_in_review ?? 0;
-    const pathaoPreparingInvoice = invoice?.payment_preparing_for_invoice ?? 0;
-
-    const cashAvailable = invoice?.payment_sent ?? 96300; // fallback if not configured
-    const cashReceivables = pathaoInReview + pathaoPreparingInvoice;
-    const cashProjected = cashAvailable + cashReceivables;
-
-    const buildPathaoGroups = (orders: CommerceOrder[], useLive = false) => {
-      const groups: Record<string, { count: number; value: number }> = {};
-      for (const order of orders) {
-        const ps = useLive && order.pathaoConsignment
-          ? (liveStatusMap.get(order.pathaoConsignment) ?? order.pathaoStatus ?? 'Not Booked')
-          : (order.pathaoStatus || 'Not Booked');
-        if (!groups[ps]) groups[ps] = { count: 0, value: 0 };
-        groups[ps].count++;
-        groups[ps].value += order.payable || order.total;
-      }
-      return groups;
-    };
-
-    // date-filtered: uses live Pathao statuses
-    const currentPathaoGroups = buildPathaoGroups(current, true);
-    // all-time: uses cached ptc_status (good enough for the overview grid)
-    const allPathaoGroups = buildPathaoGroups(allOrders, false);
-
-    const buildMetrics = (groups: Record<string, { count: number; value: number }>) => {
-      const metrics = PATHAO_STATUSES.map((s) => ({
-        status: s,
-        count: groups[s]?.count ?? 0,
-        value: groups[s]?.value ?? 0,
-      }));
-      for (const [s, v] of Object.entries(groups)) {
-        if (!PATHAO_STATUSES.includes(s)) metrics.push({ status: s, count: v.count, value: v.value });
-      }
-      return metrics;
-    };
-
-    const pathaoMetrics = buildMetrics(currentPathaoGroups);
-    const allPathaoMetrics = buildMetrics(allPathaoGroups);
-
-    // Daily sales chart data (group by date)
-    const dailyMap: Record<string, { orders: number; revenue: number }> = {};
-    for (const o of current) {
-      const day = (o.dateCreated || '').slice(0, 10);
-      if (!day) continue;
-      if (!dailyMap[day]) dailyMap[day] = { orders: 0, revenue: 0 };
-      dailyMap[day].orders++;
-      dailyMap[day].revenue += o.total;
-    }
-    const dailyChart = Object.entries(dailyMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, v]) => ({ date, ...v }));
-
-    // Top products
-    const productMap: Record<string, { orders: number; revenue: number }> = {};
-    for (const o of current) {
-      const prod = o.items || 'Unknown';
-      if (!productMap[prod]) productMap[prod] = { orders: 0, revenue: 0 };
-      productMap[prod].orders++;
-      productMap[prod].revenue += o.total;
-    }
-    const topProducts = Object.entries(productMap)
-      .sort(([,a],[,b]) => b.revenue - a.revenue)
-      .slice(0, 10)
-      .map(([product, v]) => ({ product, ...v }));
-
-    const responseData = {
-      period, label,
-      totalOrders, totalOrdersPct: calcPct(totalOrders, pTotalOrders),
-      totalValue, totalValuePct: calcPct(totalValue, pTotalValue),
-      processingOrders, processingOrdersPct: calcPct(processingOrders, pProcessing),
-      holdOrders, returnedOrders,
-      avgOrderValue, avgOrderValuePct: calcPct(avgOrderValue, pAvg),
-      grossMarginValue, grossMarginValuePct,
-      avgMarginPct, avgMarginPctPct,
-      totalAdSpend, totalAdRevenue, blendedRoas,
-      pathaoMetrics,
-      allPathaoMetrics,
-      dailyChart,
-      topProducts,
-      pipelineStages: [
-        { name: 'Processing', count: processingOrders },
-        { name: 'Packed', count: current.filter((o) => o.status === 'packed').length },
-        { name: 'Hold', count: holdOrders },
-        { name: 'Dispatched', count: current.filter((o) =>
-          ['Delivered','In Transit','Assigned for Delivery','At Delivery Hub'].includes(o.pathaoStatus)).length },
-        { name: 'Completed', count: current.filter((o) => o.status === 'completed').length },
-      ],
-      cashAvailable, cashReceivables, cashProjected,
-    };
-
-    // Cache the response metrics for 10 minutes
-    dashboardCache.set(cacheKey, responseData, 10 * 60 * 1000);
-
-    return NextResponse.json(responseData);
-  } catch (error) {
-    console.error('Dashboard metrics error:', error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed' }, { status: 500 });
+  const sp = request.nextUrl.searchParams;
+  const from = sp.get('from') ?? '';
+  const to = sp.get('to') ?? '';
+  const cfrom = sp.get('cfrom') ?? '';
+  const cto = sp.get('cto') ?? '';
+  if (!ISO.test(from) || !ISO.test(to) || from > to) {
+    return NextResponse.json({ error: 'from and to must be YYYY-MM-DD dates' }, { status: 400 });
   }
+  const hasCompare = ISO.test(cfrom) && ISO.test(cto) && cfrom <= cto;
+
+  const cacheKey = `dashboard_v2_${from}_${to}_${hasCompare ? `${cfrom}_${cto}` : ''}`;
+  if (sp.get('refresh') !== 'true') {
+    const cached = dashboardCache.get<unknown>(cacheKey);
+    if (cached) return NextResponse.json(cached);
+  }
+
+  const [cur, prev, courier, prevCourier, spend, prevSpend, summary, invoices] = await Promise.allSettled([
+    fetchOrders(from, to, true),
+    hasCompare ? fetchOrders(cfrom, cto, false) : Promise.resolve(null),
+    courierSummary(from, to),
+    hasCompare ? courierSummary(cfrom, cto) : Promise.resolve(null),
+    adSpend(from, to),
+    hasCompare ? adSpend(cfrom, cto) : Promise.resolve(null),
+    pathaoFetch<{ data: InvoiceSummary }>('/merchant/invoice-summary'),
+    getPathaoInvoices(addDays(from, -7)),
+  ]);
+
+  const value = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === 'fulfilled' ? r.value : null);
+  const failed = (r: PromiseSettledResult<unknown>) => (r.status === 'rejected' ? String(r.reason) : null);
+
+  const orders = value(cur) ?? [];
+  const sales = salesSummary(orders, from, to);
+  const prevOrders = value(prev);
+  const prevSales = prevOrders ? salesSummary(prevOrders, cfrom, cto) : null;
+
+  const pipeline = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0])) as Record<OrderStatus, number>;
+  for (const o of orders) pipeline[o.status]++;
+
+  const inv = value(summary)?.data ?? null;
+  const paid = (value(invoices) ?? []).filter((i) => {
+    const d = (i.paid_at ?? '').slice(0, 10);
+    return i.payment_status === 'paid' && d >= from && d <= to;
+  });
+
+  const body = {
+    range: { from, to },
+    compare: hasCompare ? { from: cfrom, to: cto } : null,
+    sales: sales.totals,
+    prevSales: prevSales?.totals ?? null,
+    daily: sales.daily,
+    prevDaily: prevSales?.daily ?? null,
+    pipeline,
+    courier: value(courier),
+    prevCourier: value(prevCourier),
+    adSpend: value(spend),
+    prevAdSpend: value(prevSpend),
+    topProducts: topProducts(orders),
+    payouts: {
+      paidInPeriod: paid.reduce((s, i) => s + (i.payable_amount || 0), 0),
+      payoutCount: paid.length,
+      inReview: inv?.payment_in_review ?? 0,
+      preparing: inv?.payment_preparing_for_invoice ?? 0,
+      inProcess: inv?.payment_in_process ?? 0,
+      lastPayout: inv ? { amount: inv.payment_sent, date: inv.last_invoice_date, method: inv.payment_method_name } : null,
+      lifetime: inv?.lifetime_earning ?? null,
+    },
+    errors: {
+      orders: failed(cur),
+      courier: failed(courier),
+      ads: spend.status === 'fulfilled' && spend.value == null ? 'Meta Ads unavailable' : failed(spend),
+      payouts: failed(summary) ?? failed(invoices),
+    },
+  };
+
+  // Only cache complete answers, so a transient failure doesn't stick for 5 minutes
+  if (cur.status === 'fulfilled' && courier.status === 'fulfilled' && summary.status === 'fulfilled') {
+    dashboardCache.set(cacheKey, body, CACHE_TTL);
+  }
+  return NextResponse.json(body);
 }

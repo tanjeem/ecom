@@ -518,9 +518,13 @@ export async function getPathaoInvoices(since: string): Promise<PathaoInvoice[]>
 /** One consignment line on a paid Pathao invoice, dated by its invoice. */
 export type PathaoInvoiceLine = {
   invoice_id: string;
+  /** Full timestamps, kept so the cron can persist lines exactly */
+  invoice_created_at?: string;
+  invoice_paid_at?: string | null;
   invoice_date: string; // YYYY-MM-DD the invoice was raised
   paid_date: string | null;
   consignment_id: string;
+  merchant_order_id: string;
   type: 'delivery' | 'return';
   collected: number;
   fee: number;
@@ -529,6 +533,11 @@ export type PathaoInvoiceLine = {
 
 let _invoiceLinesCache: { lines: PathaoInvoiceLine[]; expiry: number } | null = null;
 let _invoiceLinesInflight: Promise<PathaoInvoiceLine[]> | null = null;
+
+/** Invoice ids present in the bundled snapshot file. */
+export function snapshotInvoiceIds(): Set<string> {
+  return new Set(Object.keys(loadInvoiceSnapshot().invoices || {}));
+}
 
 /**
  * Every paid-invoice line: the snapshot from scripts/sync-pathao-invoices.mjs
@@ -548,7 +557,9 @@ export async function getPathaoInvoiceLines(): Promise<PathaoInvoiceLine[]> {
       const fee = Number(d.final_fee) || 0;
       return {
         invoice_id: invoiceId, invoice_date: invCreated.slice(0, 10), paid_date: invPaid ? invPaid.slice(0, 10) : null,
+        invoice_created_at: invCreated, invoice_paid_at: invPaid,
         consignment_id: d.consignment_id, type, collected, fee,
+        merchant_order_id: d.merchant_order_id && d.merchant_order_id !== 'N/A' ? String(d.merchant_order_id) : '',
         payout: d.payout != null ? Number(d.payout) : collected - fee,
       };
     };
@@ -560,11 +571,26 @@ export async function getPathaoInvoiceLines(): Promise<PathaoInvoiceLine[]> {
       lines.push(toLine(d, d.invoice_id!, inv.created_at, inv.paid_at));
     }
 
+    // Invoices the daily cron saved after the snapshot was taken
+    const known = new Map(Object.entries(meta).map(([id, i]) => [id, i.created_at]));
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      const { data } = await supabase.from('fin_pathao_invoice_lines').select('*');
+      for (const r of data || []) {
+        if (meta[r.invoice_id]) continue;
+        const created = String(r.invoice_created_at).replace('T', ' ').slice(0, 19);
+        lines.push(toLine(r, r.invoice_id, created, r.invoice_paid_at ? String(r.invoice_paid_at).replace('T', ' ').slice(0, 19) : null));
+        known.set(r.invoice_id, created);
+      }
+    } catch (error) {
+      console.error('[Pathao] Saved invoice lines unavailable:', error);
+    }
+
     let complete = true;
     try {
-      const newest = Object.values(meta).reduce((m, i) => (i.created_at > m ? i.created_at : m), '');
+      const newest = [...known.values()].reduce((m, c) => (c > m ? c : m), '');
       const since = newest ? newest.slice(0, 10) : '2024-01-01';
-      const fresh = (await getPathaoInvoices(since)).filter(i => i.payment_status === 'paid' && !meta[i.invoice_id]);
+      const fresh = (await getPathaoInvoices(since)).filter(i => i.payment_status === 'paid' && !known.has(i.invoice_id));
       if (fresh.length) {
         const token = await getMerchantPortalToken();
         for (const inv of fresh) {

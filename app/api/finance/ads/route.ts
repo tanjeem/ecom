@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { fetchMetaMonthlyInsights } from '@/lib/integrations/meta';
-import { getPathaoPortalOrders } from '@/lib/integrations/pathao';
-import { supabase } from '@/lib/supabase';
+import { buildFinanceSummary } from '@/lib/finance/summary';
+import { todayISO } from '@/lib/finance/periods';
 import { dashboardCache } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const bypassCache = searchParams.get('refresh') === 'true';
-  const cacheKey = 'meta_reconciliation_monthly_data';
+  const cacheKey = 'meta_reconciliation_monthly_data_v3';
 
   if (!bypassCache) {
     const cached = dashboardCache.get<any>(cacheKey);
@@ -25,67 +25,25 @@ export async function GET(request: Request) {
     // 1. Fetch Meta insights
     const metaData = await fetchMetaMonthlyInsights();
 
-    // 2. Fetch Supabase store revenue transactions
-    const { data: transactions, error: txError } = await supabase
-      .from('fin_transactions')
-      .select('date, amount, category, type')
-      .eq('type', 'income');
+    // 2. Revenue, Pathao fees, product cost and order counts per month from the
+    //    shared finance summary, so this tab agrees with Overview and P&L
+    //    (invoice-based Pathao revenue, customer returns counted once).
+    const firstMonth = metaData[0]?.month || '2025-01';
+    const summary = await buildFinanceSummary({ from: `${firstMonth}-01`, to: todayISO(), granularity: 'month' });
+    const byMonth = new Map(summary.series.map(p => [p.key.slice(0, 7), p]));
 
-    if (txError) {
-      throw new Error(`Failed to fetch transactions from Supabase: ${txError.message}`);
-    }
-
-    const storeRevenueBuckets: Record<string, number> = {};
-    if (transactions) {
-      for (const tx of transactions) {
-        const month = tx.date?.slice(0, 7); // YYYY-MM
-        if (!month) continue;
-        if (tx.category === 'sales_prepaid' || tx.category === 'sales_cod') {
-          if (!storeRevenueBuckets[month]) {
-            storeRevenueBuckets[month] = 0;
-          }
-          storeRevenueBuckets[month] += Number(tx.amount) || 0;
-        }
-      }
-    }
-
-    // 3. Fetch Pathao orders and bucket counts
-    const pathaoOrders = await getPathaoPortalOrders().catch((err) => {
-      console.error('[API] Failed to fetch Pathao orders:', err);
-      return [];
-    });
-
-    const DELIVERED = new Set(['Delivered', 'Partial Delivery']);
-    const RETURNED  = new Set(['Return', 'Returned to Merchant', 'Returned To Merchant', 'Return In Transit', 'Paid Return']);
-
-    const pathaoBuckets: Record<string, { deliveredCount: number; returnedCount: number; deliveredAmount: number }> = {};
-    for (const order of pathaoOrders) {
-      const month = order.order_created_at?.slice(0, 7);
-      if (!month) continue;
-      if (!pathaoBuckets[month]) {
-        pathaoBuckets[month] = { deliveredCount: 0, returnedCount: 0, deliveredAmount: 0 };
-      }
-      const amount = order.order_amount || 0;
-      if (DELIVERED.has(order.order_status)) {
-        pathaoBuckets[month].deliveredCount++;
-        pathaoBuckets[month].deliveredAmount += amount;
-      } else if (RETURNED.has(order.order_status)) {
-        pathaoBuckets[month].returnedCount++;
-      }
-    }
-
-    // 4. Merge all sources using the month key
+    // 3. Merge using the month key
     const reconciledData = metaData.map((item) => {
-      const month = item.month;
-      const pathao = pathaoBuckets[month] || { deliveredCount: 0, returnedCount: 0, deliveredAmount: 0 };
-      const storeRevenue = storeRevenueBuckets[month] || 0;
-
+      const p = byMonth.get(item.month);
+      const c = p?.cats || {};
       return {
         ...item,
-        storeRevenue,
-        deliveredOrders: pathao.deliveredCount,
-        returnedOrders: pathao.returnedCount,
-        deliveredAmount: pathao.deliveredAmount,
+        storeRevenue: 0, // revenue is Pathao collected only (deliveredAmount)
+        deliveredOrders: p?.delivered || 0,
+        returnedOrders: p?.returned || 0,
+        deliveredAmount: c.pathao_cod || 0,
+        pathaoFees: c.courier_fees || 0,
+        productCost: summary.cogs.method === 'per_unit' ? (c.product_cost || 0) : null,
       };
     });
 

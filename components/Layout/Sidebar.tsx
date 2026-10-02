@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, PackageCheck, Boxes, Landmark, Megaphone, Workflow, Coins } from 'lucide-react';
+import { LayoutDashboard, PackageCheck, Boxes, Workflow, Coins, LogOut } from 'lucide-react';
 
 interface SidebarProps {
   activeView: string;
@@ -11,9 +11,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate }) => {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'orders', label: 'Orders', icon: PackageCheck },
     { id: 'inventory', label: 'Inventory', icon: Boxes },
-    { id: 'accounting', label: 'Accounting', icon: Landmark },
     { id: 'finance', label: 'Finance', icon: Coins },
-    { id: 'ads', label: 'Meta Ads', icon: Megaphone },
     { id: 'scale', label: 'Scale Ops', icon: Workflow },
   ];
 
@@ -50,6 +48,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate }) => {
           <span>WooCommerce, Pathao, bank, Meta</span>
         </div>
       </div>
+
+      <button
+        type="button"
+        className="nav-item"
+        onClick={async () => {
+          await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+          window.location.href = '/login';
+        }}
+      >
+        <LogOut size={20} />
+        <span>Sign out</span>
+      </button>
     </aside>
   );
 };

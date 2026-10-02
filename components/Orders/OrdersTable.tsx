@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { CommerceOrder, OrderStatus } from '@/lib/types/commerce';
+import { ORDER_STATUSES, STATUS_LABEL, STATUS_STYLE } from '@/lib/orderStatus';
 
 interface OrdersTableProps {
   readonly orders: CommerceOrder[];
@@ -11,22 +12,6 @@ interface OrdersTableProps {
   readonly onOrderClick: (order: CommerceOrder) => void;
   readonly onStatusChange: (order: CommerceOrder, newStatus: OrderStatus) => void;
 }
-
-const STATUS_COLORS: Record<OrderStatus, { bg: string; color: string }> = {
-  paid:      { bg: '#dbeafe', color: '#1d4ed8' },
-  packed:    { bg: '#d1fae5', color: '#065f46' },
-  hold:      { bg: '#fef3c7', color: '#92400e' },
-  returned:  { bg: '#fee2e2', color: '#b91c1c' },
-  completed: { bg: '#cffafe', color: '#0e7490' },
-};
-
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  paid:      'Processing',
-  packed:    'Packed',
-  hold:      'Hold',
-  returned:  'Returned',
-  completed: 'Completed',
-};
 
 const PATHAO_COLOR: Record<string, string> = {
   'Delivered':                '#16864d',
@@ -81,8 +66,6 @@ function PhoneCell({ raw }: { readonly raw: string }) {
   );
 }
 
-const ALL_STATUSES: OrderStatus[] = ['paid', 'packed', 'hold', 'returned', 'completed'];
-
 export const OrdersTable: React.FC<OrdersTableProps> = ({
   orders,
   selectedOrders,
@@ -95,14 +78,13 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({
 
   return (
     <div className="table-wrap" style={{ overflowX: 'auto' }}>
-      <table style={{ minWidth: 1260 }}>
+      <table style={{ minWidth: 1000 }}>
         <thead>
           <tr>
             <th style={{ width: 36 }}>
               <input type="checkbox" aria-label="Select all orders" checked={allSelected} onChange={(e) => onSelectAll(e.target.checked)} />
             </th>
             <th>Order</th>
-            <th>Date</th>
             <th>Customer</th>
             <th>Phone</th>
             <th>Address</th>
@@ -110,12 +92,11 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({
             <th style={{ textAlign: 'right' }}>COD</th>
             <th>Status</th>
             <th>Pathao</th>
-            <th>Consignment</th>
           </tr>
         </thead>
         <tbody>
           {orders.map((order) => {
-            const sc = STATUS_COLORS[order.status] ?? STATUS_COLORS.paid;
+            const sc = STATUS_STYLE[order.status] ?? STATUS_STYLE.paid;
             const pc = pathaoColor(order.pathaoStatus || 'Not Booked');
             const isSelected = selectedOrders.includes(order.id);
 
@@ -129,16 +110,18 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({
                   <input type="checkbox" aria-label={`Select order ${order.id}`} checked={isSelected} onChange={(e) => onSelectionChange(order.id, e.target.checked)} />
                 </td>
 
-                <td style={{ fontWeight: 700, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{order.id}</td>
-                <td style={{ fontSize: '0.8rem', color: '#68707a', whiteSpace: 'nowrap' }}>{fmtDate(order.dateCreated)}</td>
-                <td style={{ fontSize: '0.875rem', fontWeight: 500 }}>{order.customer}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{order.id}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 2 }}>{fmtDate(order.dateCreated)}</div>
+                </td>
+                <td style={{ fontSize: '0.875rem', fontWeight: 500, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={order.customer}>{order.customer}</td>
 
                 <td onClick={(e) => e.stopPropagation()}>
                   <PhoneCell raw={order.phone || ''} />
                 </td>
 
                 <td>
-                  <div style={{ fontSize: '0.8rem', color: '#374151', width: 260, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}>
+                  <div style={{ fontSize: '0.8rem', color: '#374151', width: 230, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                     {[order.address, order.city].filter(Boolean).join(', ') || '—'}
                   </div>
                 </td>
@@ -158,23 +141,22 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({
                     onChange={(e) => onStatusChange(order, e.target.value as OrderStatus)}
                     style={{
                       background: sc.bg, color: sc.color,
-                      border: 'none', borderRadius: 4,
-                      padding: '3px 6px', fontSize: '0.72rem', fontWeight: 700,
+                      border: 'none', borderRadius: 99,
+                      padding: '3px 8px', fontSize: '0.72rem', fontWeight: 700,
                       cursor: 'pointer', outline: 'none',
                     }}
                   >
-                    {ALL_STATUSES.map((s) => (
-                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                    {ORDER_STATUSES.map((s) => (
+                      <option key={s} value={s}>{STATUS_LABEL[s]}</option>
                     ))}
                   </select>
                 </td>
 
-                <td style={{ fontSize: '0.8rem', fontWeight: 600, color: pc, whiteSpace: 'nowrap' }}>
-                  {order.pathaoStatus || 'Not Booked'}
-                </td>
-
-                <td style={{ fontSize: '0.75rem', color: '#68707a', fontFamily: 'monospace' }}>
-                  {order.pathaoConsignment || '—'}
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: pc }}>{order.pathaoStatus || 'Not Booked'}</div>
+                  {order.pathaoConsignment && (
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontFamily: 'monospace', marginTop: 2 }}>{order.pathaoConsignment}</div>
+                  )}
                 </td>
               </tr>
             );

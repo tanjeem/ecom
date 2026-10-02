@@ -1,32 +1,26 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw, Download, Send, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, Download, Send, X, ChevronLeft, ChevronRight, PackageCheck, Truck, CheckCircle2, RotateCcw } from 'lucide-react';
 import { InboxOrderForm, BulkOrderForm, type InboxOrderData } from '@/components/Orders/InboxOrderForm';
 import { OrdersTable } from '@/components/Orders/OrdersTable';
 import type { CommerceOrder, OrderStatus } from '@/lib/types/commerce';
+import { ORDER_STATUSES, STATUS_LABEL, STATUS_STYLE } from '@/lib/orderStatus';
+import { KpiCard, Segmented, ErrorState } from '@/components/Finance/ui';
 
 type FilterType = 'all' | OrderStatus;
 
+type StatusCounts = Record<FilterType, number>;
+
 const FILTERS: { key: FilterType; label: string }[] = [
-  { key: 'all',       label: 'All' },
-  { key: 'paid',      label: 'Processing' },
-  { key: 'packed',    label: 'Packed' },
-  { key: 'hold',      label: 'Hold' },
-  { key: 'completed', label: 'Completed' },
-  { key: 'returned',  label: 'Returns' },
+  { key: 'all', label: 'All' },
+  ...ORDER_STATUSES.map((key) => ({ key, label: STATUS_LABEL[key] })),
 ];
 
-const STATUS_ACCENT: Record<FilterType, string> = {
-  all:       '#6d4ed9',
-  paid:      '#2563eb',
-  packed:    '#16864d',
-  hold:      '#b46a08',
-  completed: '#0891b2',
-  returned:  '#c23a3a',
-};
-
 const PER_PAGE = 50;
+
+// Same 34px control height as the finance period bar
+const CTRL: React.CSSProperties = { height: 34, minHeight: 34, padding: '0 12px', fontSize: '0.8rem', borderRadius: 8, gap: 6 };
 
 function exportCSV(orders: CommerceOrder[]) {
   const headers = ['Order','Date','Customer','Phone','City','Items','Payment','Status','Pathao','Consignment','Payable','Total'];
@@ -85,14 +79,6 @@ function pathaoStatusColor(status: string | undefined): string {
   return '#2563eb';
 }
 
-const STATUS_CHIP: Record<OrderStatus, { bg: string; color: string }> = {
-  paid:      { bg: '#dbeafe', color: '#1d4ed8' },
-  packed:    { bg: '#d1fae5', color: '#065f46' },
-  hold:      { bg: '#fef3c7', color: '#92400e' },
-  returned:  { bg: '#fee2e2', color: '#b91c1c' },
-  completed: { bg: '#cffafe', color: '#0e7490' },
-};
-
 type PathaoStore = { storeId: number; storeName: string; isDefaultStore: boolean };
 
 function OrderDetailPanel({
@@ -110,8 +96,8 @@ function OrderDetailPanel({
   readonly selectedStoreId: number | null;
   readonly onStoreChange: (storeId: number) => void;
 }) {
-  const sc = STATUS_CHIP[order.status] ?? STATUS_CHIP.paid;
-  const displayStatus = order.status === 'paid' ? 'Processing' : order.status.charAt(0).toUpperCase() + order.status.slice(1);
+  const sc = STATUS_STYLE[order.status] ?? STATUS_STYLE.paid;
+  const displayStatus = STATUS_LABEL[order.status] ?? order.status;
   return (
     <>
       <button
@@ -292,6 +278,24 @@ function NewOrderPage({ onCreated, onBack }: { readonly onCreated: () => void; r
   );
 }
 
+/* ── Loading placeholder ─────────────────────────────────────────────────── */
+
+function OrdersSkeleton() {
+  const bar = (w: number | string) => (
+    <div style={{ height: 10, width: w, borderRadius: 5, background: 'linear-gradient(90deg,#f1f5f9,#e8edf3,#f1f5f9)', backgroundSize: '200% 100%', animation: 'orders-shimmer 1.2s ease-in-out infinite' }} />
+  );
+  return (
+    <div aria-busy="true" aria-label="Loading orders" style={{ padding: '6px 16px' }}>
+      <style>{'@keyframes orders-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }'}</style>
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '20px 70px 60px 1.2fr 1fr 2fr 1.4fr 70px 90px', gap: 16, alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #f1f5f9' }}>
+          {bar(14)}{bar('80%')}{bar('70%')}{bar('85%')}{bar('75%')}{bar('90%')}{bar('70%')}{bar('80%')}{bar('85%')}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Main view ───────────────────────────────────────────────────────────── */
 
 // Last "New Order" press already acted on. Module-level so remounting the view
@@ -310,6 +314,8 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [isLoading, setIsLoading]         = useState(true);
   const [isSyncing, setIsSyncing]         = useState(false);
+  const [loadError, setLoadError]         = useState<string | null>(null);
+  const [counts, setCounts]               = useState<StatusCounts | null>(null);
   const [activeFilter, setActiveFilter]   = useState<FilterType>('all');
   const [detailOrder, setDetailOrder]     = useState<CommerceOrder | null>(null);
   const [viewMode, setViewMode]           = useState<'list' | 'new-order'>(() =>
@@ -343,22 +349,27 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal]           = useState(0);
 
-  // Read through a ref so callbacks that captured fetchOrders still search the latest text
+  // Read through refs so callbacks that captured fetchOrders still use the latest search/filter
   const searchRef = useRef(searchQuery.trim());
+  const filterRef = useRef<FilterType>('all');
 
   const fetchOrders = useCallback(async (p = page) => {
     setIsSyncing(true);
     try {
       const params = new URLSearchParams({ page: String(p), perPage: String(PER_PAGE) });
       if (searchRef.current) params.set('search', searchRef.current);
+      if (filterRef.current !== 'all') params.set('status', filterRef.current);
       const res = await fetch(`/api/orders?${params}`);
-      const data = await res.json() as { orders?: CommerceOrder[]; total?: number; page?: number; totalPages?: number };
+      const data = await res.json() as { orders?: CommerceOrder[]; total?: number; page?: number; totalPages?: number; counts?: StatusCounts | null };
+      if (!res.ok) throw new Error('WooCommerce did not respond — try Sync again.');
       setOrders(data.orders ?? []);
       setTotal(data.total ?? 0);
       setTotalPages(data.totalPages ?? 1);
+      if (data.counts) setCounts(data.counts);
       setPage(p);
-    } catch {
-      // silent
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not load orders');
     } finally {
       setIsSyncing(false);
       setIsLoading(false);
@@ -379,6 +390,15 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
     }, 350);
     return () => clearTimeout(timer);
   }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Status tabs filter on the server, across every order — not just the loaded page
+  const applyFilter = (f: FilterType) => {
+    if (f === filterRef.current) return;
+    filterRef.current = f;
+    setActiveFilter(f);
+    setSelectedOrders([]);
+    fetchOrders(1);
+  };
 
   const goToPage = (p: number) => {
     setSelectedOrders([]);
@@ -454,12 +474,11 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
     }
   }, [fetchOrders, page, selectedStoreId]);
 
-  const filteredOrders = activeFilter === 'all'
-    ? orders
-    : orders.filter((o) => o.status === activeFilter);
+  const filteredOrders = orders;
 
-  const getCount = (key: FilterType) =>
-    key === 'all' ? orders.length : orders.filter((o) => o.status === key).length;
+  const needDispatch = counts ? counts.paid + counts.packed + counts.hold : null;
+  const closed = counts ? counts.completed + counts.returned : 0;
+  const returnRate = counts && closed > 0 ? (counts.returned / closed) * 100 : null;
 
   const totalPayable = orders
     .filter((o) => selectedOrders.includes(o.id))
@@ -479,52 +498,69 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
       {/* ── Orders list ──────────────────────────────────────────────────── */}
       {viewMode === 'list' && <>
 
-      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-      <div style={{ background: '#fff', borderBottom: '1px solid #e4e8ef', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {/* ── Status summary (store-wide, click to filter) ─────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <KpiCard
+          label="Needs dispatch" icon={PackageCheck}
+          value={needDispatch == null ? '—' : needDispatch.toLocaleString()}
+          tone={needDispatch ? 'warn' : undefined}
+          sub={counts ? `${counts.paid} processing · ${counts.packed} packed · ${counts.hold} on hold` : 'Loading…'}
+          onClick={() => applyFilter('paid')}
+        />
+        <KpiCard
+          label="Dispatched" icon={Truck}
+          value={counts ? counts.dispatched.toLocaleString() : '—'}
+          sub="With the courier, not yet completed"
+          onClick={() => applyFilter('dispatched')}
+        />
+        <KpiCard
+          label="Completed" icon={CheckCircle2}
+          value={counts ? counts.completed.toLocaleString() : '—'}
+          sub={counts ? `of ${counts.all.toLocaleString()} orders all-time` : undefined}
+          onClick={() => applyFilter('completed')}
+        />
+        <KpiCard
+          label="Returned / cancelled" icon={RotateCcw}
+          value={counts ? counts.returned.toLocaleString() : '—'}
+          tone={returnRate != null && returnRate >= 25 ? 'bad' : undefined}
+          sub={returnRate != null ? `${returnRate.toFixed(1)}% of closed orders` : undefined}
+          onClick={() => applyFilter('returned')}
+        />
+      </div>
 
-        {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 2, flex: 1, flexWrap: 'wrap' }}>
-          {FILTERS.map(({ key, label }) => {
-            const active = activeFilter === key;
-            const accent = STATUS_ACCENT[key];
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setActiveFilter(key)}
-                style={{
-                  padding: '6px 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                  fontSize: '0.8rem', fontWeight: active ? 700 : 500,
-                  background: active ? accent + '18' : 'transparent',
-                  color: active ? accent : '#6b7280',
-                  borderBottom: active ? `2px solid ${accent}` : '2px solid transparent',
-                }}
-              >
-                {label} <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>({getCount(key)})</span>
-              </button>
-            );
-          })}
+      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        padding: '10px 12px', marginBottom: 12, background: 'rgba(246,247,249,0.92)',
+        border: '1px solid #e2e7ee', borderRadius: 12,
+      }}>
+        {/* Tabs keep their natural width and scroll sideways on narrow screens */}
+        <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+          <div style={{ width: 'max-content' }}>
+          <Segmented
+            value={activeFilter}
+            onChange={applyFilter}
+            options={FILTERS.map(({ key, label }) => ({
+              id: key,
+              label: (
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  {label}
+                  {counts && <span style={{ marginLeft: 5, fontWeight: 600, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>{counts[key].toLocaleString()}</span>}
+                </span>
+              ),
+            }))}
+          />
+          </div>
         </div>
 
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            type="button"
-            onClick={() => fetchOrders(page)}
-            disabled={isSyncing}
-            title="Sync from WooCommerce"
-            style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 12px', fontSize: '0.8rem', color: '#374151', cursor: 'pointer' }}
-          >
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button type="button" className="secondary-action" style={CTRL} onClick={() => fetchOrders(page)} disabled={isSyncing} title="Reload from WooCommerce">
             <RefreshCw size={13} style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} />
             {isSyncing ? 'Syncing…' : 'Sync'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => exportCSV(filteredOrders)}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 12px', fontSize: '0.8rem', color: '#374151', cursor: 'pointer' }}
-          >
-            <Download size={13} /> Export
+          <button type="button" className="secondary-action" style={CTRL} onClick={() => exportCSV(filteredOrders)} title="Download the orders on this page as CSV">
+            <Download size={13} /> Export page
           </button>
 
           {pathaoStores.length > 1 && (
@@ -532,7 +568,7 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
               value={selectedStoreId ?? ''}
               onChange={(e) => setSelectedStoreId(Number(e.target.value))}
               title="Pathao store to book orders from"
-              style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 8px', fontSize: '0.8rem', color: '#374151', background: '#fff' }}
+              style={{ height: 34, border: '1px solid #d9dee6', borderRadius: 8, padding: '0 8px', fontSize: '0.8rem', color: '#374151', background: '#fff' }}
             >
               {pathaoStores.map((s) => (
                 <option key={s.storeId} value={s.storeId}>
@@ -544,112 +580,98 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
 
           <button
             type="button"
+            className="primary-action"
             onClick={handleBulkSendPathao}
             disabled={selectedOrders.length === 0 || bookingState === 'loading'}
             title={selectedOrders.length === 0 ? 'Select orders to book' : `Book ${selectedOrders.length} with Pathao`}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: '#0ea5e9', color: '#fff',
-              border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: '0.82rem', fontWeight: 700,
-              cursor: selectedOrders.length > 0 ? 'pointer' : 'not-allowed',
-              opacity: selectedOrders.length > 0 ? 1 : 0.4,
-            }}
+            style={{ ...CTRL, opacity: selectedOrders.length > 0 ? 1 : 0.45, cursor: selectedOrders.length > 0 ? 'pointer' : 'not-allowed' }}
           >
             <Send size={13} />
             {selectedOrders.length > 0 ? `Book Pathao (${selectedOrders.length})` : 'Book Pathao'}
           </button>
-
         </div>
       </div>
 
       {/* ── Booking status banner ────────────────────────────────────────── */}
       {bookingState !== 'idle' && (
-        <div style={{
-          padding: '10px 20px', fontSize: '0.82rem', fontWeight: 500,
-          background: bannerBg(bookingState),
-          color: bannerColor(bookingState),
-          borderBottom: '1px solid #e4e8ef', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        <div role="status" style={{
+          padding: '10px 14px', marginBottom: 12, fontSize: '0.82rem', fontWeight: 500, borderRadius: 10,
+          background: bannerBg(bookingState), color: bannerColor(bookingState),
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <span>{bookingMsg}</span>
-          <button type="button" onClick={() => setBookingState('idle')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6 }}>
+          <button type="button" aria-label="Dismiss" onClick={() => setBookingState('idle')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6 }}>
             <X size={14} />
           </button>
         </div>
       )}
 
       {/* ── Orders table ─────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {isLoading ? (
-          <div style={{ padding: '4rem', textAlign: 'center', color: '#9ca3af' }}>
-            Loading orders from WooCommerce…
-          </div>
+      <div style={{ background: '#fff', border: '1px solid #e2e7ee', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+        {loadError && orders.length === 0 ? (
+          <ErrorState bare message="Could not load orders" hint={loadError} onRetry={() => fetchOrders(page)} />
+        ) : isLoading ? (
+          <OrdersSkeleton />
         ) : (
-          <OrdersTable
-            orders={filteredOrders}
-            selectedOrders={selectedOrders}
-            onSelectionChange={(id, sel) =>
-              setSelectedOrders(sel ? [...selectedOrders, id] : selectedOrders.filter((x) => x !== id))
-            }
-            onSelectAll={(sel) =>
-              setSelectedOrders(sel ? filteredOrders.map((o) => o.id) : [])
-            }
-            onOrderClick={setDetailOrder}
-            onStatusChange={handleStatusChange}
-          />
+          <div style={{ opacity: isSyncing ? 0.55 : 1, transition: 'opacity 150ms ease' }}>
+            <OrdersTable
+              orders={filteredOrders}
+              selectedOrders={selectedOrders}
+              onSelectionChange={(id, sel) =>
+                setSelectedOrders(sel ? [...selectedOrders, id] : selectedOrders.filter((x) => x !== id))
+              }
+              onSelectAll={(sel) =>
+                setSelectedOrders(sel ? filteredOrders.map((o) => o.id) : [])
+              }
+              onOrderClick={setDetailOrder}
+              onStatusChange={handleStatusChange}
+            />
+          </div>
+        )}
+
+        {/* ── Pagination ── */}
+        {!isLoading && total > 0 && (
+          <div style={{
+            borderTop: '1px solid #eef1f5', padding: '10px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8,
+          }}>
+            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+              Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, total)} of <strong>{total.toLocaleString()}</strong>
+              {activeFilter !== 'all' && <> {STATUS_LABEL[activeFilter].toLowerCase()}</>} orders
+              {searchRef.current && <> matching “{searchRef.current}”</>}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button type="button" className="secondary-action" onClick={() => goToPage(page - 1)} disabled={page <= 1}
+                style={{ ...CTRL, height: 32, minHeight: 32, opacity: page <= 1 ? 0.4 : 1, cursor: page <= 1 ? 'not-allowed' : 'pointer' }}>
+                <ChevronLeft size={14} /> Prev
+              </button>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+                return start + i;
+              }).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  aria-current={p === page ? 'page' : undefined}
+                  onClick={() => goToPage(p)}
+                  style={{
+                    width: 32, height: 32, border: 'none', borderRadius: 8, cursor: 'pointer',
+                    fontSize: '0.8rem', fontWeight: p === page ? 800 : 500, fontVariantNumeric: 'tabular-nums',
+                    background: p === page ? '#111' : 'transparent',
+                    color: p === page ? '#fff' : '#374151',
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+              <button type="button" className="secondary-action" onClick={() => goToPage(page + 1)} disabled={page >= totalPages}
+                style={{ ...CTRL, height: 32, minHeight: 32, opacity: page >= totalPages ? 0.4 : 1, cursor: page >= totalPages ? 'not-allowed' : 'pointer' }}>
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
-
-      {/* ── Pagination controls ──────────────────────────────────────────── */}
-      {!isLoading && total > 0 && (
-        <div style={{
-          background: '#fff', borderTop: '1px solid #e4e8ef', padding: '10px 20px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8,
-        }}>
-          <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>
-            Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, total)} of <strong>{total.toLocaleString()}</strong> orders
-            {searchRef.current && <> matching “{searchRef.current}”</>}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button
-              type="button"
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', border: '1px solid #d1d5db', borderRadius: 6, background: 'none', cursor: page <= 1 ? 'not-allowed' : 'pointer', opacity: page <= 1 ? 0.4 : 1, fontSize: '0.8rem', color: '#374151' }}
-            >
-              <ChevronLeft size={14} /> Prev
-            </button>
-
-            {/* Page number buttons — show up to 5 around current page */}
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-              const start = Math.max(1, Math.min(page - 2, totalPages - 4));
-              return start + i;
-            }).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => goToPage(p)}
-                style={{
-                  width: 32, height: 32, border: 'none', borderRadius: 6, cursor: 'pointer',
-                  fontSize: '0.8rem', fontWeight: p === page ? 700 : 400,
-                  background: p === page ? '#2563eb' : 'transparent',
-                  color: p === page ? '#fff' : '#374151',
-                }}
-              >
-                {p}
-              </button>
-            ))}
-
-            <button
-              type="button"
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= totalPages}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', border: '1px solid #d1d5db', borderRadius: 6, background: 'none', cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.4 : 1, fontSize: '0.8rem', color: '#374151' }}
-            >
-              Next <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ── Floating selection bar ───────────────────────────────────────── */}
       {selectedOrders.length > 0 && (
@@ -660,7 +682,7 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
           boxShadow: '0 4px 24px rgba(0,0,0,0.25)', zIndex: 50, whiteSpace: 'nowrap',
         }}>
           <span style={{ fontSize: '0.875rem' }}>
-            <strong>{selectedOrders.length}</strong> selected · BDT {totalPayable.toLocaleString()}
+            <strong>{selectedOrders.length}</strong> selected · ৳{totalPayable.toLocaleString()}
           </span>
           <button
             type="button"

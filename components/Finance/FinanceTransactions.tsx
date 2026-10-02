@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Trash2, Search, Truck, Smartphone, Banknote, Megaphone, Scissors, Pencil, Copy, X, Download,
-  ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Receipt, Check,
+  ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Receipt, Check, Paperclip, Repeat,
 } from 'lucide-react';
 import type { FinTransaction, FinVendor } from '@/lib/types/finance';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, TRANSFER_CATEGORIES } from '@/lib/types/finance';
@@ -31,6 +31,7 @@ type FormState = {
   vendor_id: string;
   reference_no: string;
   notes: string;
+  receipt_path?: string | null;
 };
 
 const emptyForm = (over: Partial<FormState> = {}): FormState => ({
@@ -88,10 +89,11 @@ const Editor = ({
   const [form, setForm] = useState<FormState>(initial);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<File | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
   const isEdit = !!form.id;
 
-  useEffect(() => { setForm(initial); setErr(null); }, [initial]);
+  useEffect(() => { setForm(initial); setErr(null); setReceipt(null); }, [initial]);
   useEffect(() => { amountRef.current?.focus(); }, [initial]);
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm(f => ({ ...f, [k]: v }));
@@ -113,6 +115,20 @@ const Editor = ({
       });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || 'Save failed');
+      if (receipt) {
+        const fd = new FormData();
+        fd.set('transaction_id', json.transaction.id);
+        fd.set('file', receipt);
+        const up = await fetch('/api/finance/receipts', { method: 'POST', body: fd });
+        const upJson = await up.json().catch(() => ({}));
+        // The transaction is saved either way — say so rather than failing the whole save
+        if (!up.ok) {
+          // Switch to edit mode so retrying updates this entry instead of creating a duplicate
+          setForm(f => ({ ...f, id: json.transaction.id }));
+          throw new Error(`Saved, but the receipt didn't upload: ${upJson.error || up.status}`);
+        }
+        setReceipt(null);
+      }
       onSaved(`${isEdit ? 'Updated' : 'Added'} ${getCategoryLabel(form.category)} · ${fmt(Number(form.amount))}`, keepOpen);
       if (keepOpen) {
         // Keep date/type/category/method for rapid entry of similar rows
@@ -200,6 +216,19 @@ const Editor = ({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
             <FormField label="Reference / invoice no. (optional)">
               <input type="text" value={form.reference_no} onChange={e => set('reference_no', e.target.value)} placeholder="e.g. TrxID, invoice #" style={inputStyle} />
+            </FormField>
+            <FormField label="Receipt (optional)">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <label style={{ ...btnSecondary, padding: '7px 11px', cursor: 'pointer' }}>
+                  <Paperclip size={13} /> {receipt ? 'Change file' : form.receipt_path ? 'Replace receipt' : 'Attach photo or PDF'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,application/pdf" hidden
+                    onChange={e => { const f = e.target.files?.[0]; if (f && f.size > 4 * 1024 * 1024) { setErr('Receipt must be under 4 MB.'); return; } setReceipt(f || null); }} />
+                </label>
+                {receipt && <span style={{ fontSize: '0.76rem', color: '#334155' }}>{receipt.name}</span>}
+                {!receipt && form.receipt_path && form.id && (
+                  <a href={`/api/finance/receipts?id=${form.id}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.76rem', color: '#2563eb', fontWeight: 700 }}>View current receipt</a>
+                )}
+              </div>
             </FormField>
             <FormField label="Notes (optional)">
               <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
@@ -308,6 +337,7 @@ export const FinanceTransactions: React.FC = () => {
   const openEdit = (t: FinTransaction) => setEditor({
     id: t.id, date: t.date, type: t.type, category: t.category, description: t.description, amount: String(t.amount),
     payment_method: t.payment_method || 'Cash', vendor_id: t.vendor_id || '', reference_no: t.reference_no || '', notes: t.notes || '',
+    receipt_path: t.receipt_path ?? null,
   });
   const duplicate = (t: FinTransaction) => setEditor({
     date: defaultDate(), type: t.type, category: t.category, description: t.description, amount: String(t.amount),
@@ -514,7 +544,13 @@ export const FinanceTransactions: React.FC = () => {
                         {new Date(`${tx.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: tx.date.slice(0, 4) === todayISO().slice(0, 4) ? undefined : '2-digit' })}
                       </td>
                       <td style={{ padding: '9px 12px', borderBottom: '1px solid #f1f5f9', maxWidth: 320 }}>
-                        <div style={{ fontSize: '0.84rem', color: '#0f172a', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.description}</div>
+                        <div style={{ fontSize: '0.84rem', color: '#0f172a', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.description}
+                          {tx.receipt_path && (
+                            <a href={`/api/finance/receipts?id=${tx.id}`} target="_blank" rel="noreferrer" title="View receipt" onClick={e => e.stopPropagation()}
+                              style={{ marginLeft: 6, color: '#2563eb', verticalAlign: -2, display: 'inline-flex' }}><Paperclip size={13} /></a>
+                          )}
+                          {tx.recurring_id && <span title="Posted automatically by a recurring entry" style={{ marginLeft: 5, color: '#94a3b8', verticalAlign: -2, display: 'inline-flex' }}><Repeat size={12} /></span>}
+                        </div>
                         {(tx.reference_no || tx.notes) && (
                           <div style={{ fontSize: '0.7rem', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {[tx.reference_no && `Ref ${tx.reference_no}`, tx.notes].filter(Boolean).join(' · ')}

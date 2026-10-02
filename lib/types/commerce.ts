@@ -1,4 +1,5 @@
-export type OrderStatus = "paid" | "packed" | "hold" | "returned" | "completed";
+// "paid" is WooCommerce processing/pending; "returned" covers refunded, cancelled and failed
+export type OrderStatus = "paid" | "packed" | "dispatched" | "hold" | "returned" | "completed";
 
 export type CommerceOrder = {
   id: string;
@@ -20,6 +21,8 @@ export type CommerceOrder = {
   margin: string;
   notes: string;
   dateCreated?: string;
+  /** Per-product lines, when the WooCommerce response included them */
+  lineItems?: { name: string; quantity: number; total: number }[];
 };
 
 export type InboxOrderLineItem = {

@@ -5,6 +5,7 @@ import { Plus, Check, X } from 'lucide-react';
 import type { FabricPurchase, AccessoryPurchase, ProductionBatch, FinVendor } from '@/lib/types/finance';
 import { fmt, fmtFull, PAYMENT_METHODS, inputStyle, selectStyle, btnPrimary, btnSecondary } from './shared';
 import { FormField, StatTile, LoadingState, ErrorState, EmptyState } from './ui';
+import { usePeriod } from './period';
 
 type ProcurementTab = 'fabric' | 'accessories' | 'production';
 
@@ -30,9 +31,16 @@ const StatusPill = ({ status }: { status: string }) => {
 
 export const FinanceProcurement: React.FC = () => {
   const [tab, setTab] = useState<ProcurementTab>('fabric');
-  const [fabricItems, setFabricItems] = useState<FabricPurchase[]>([]);
-  const [accessoryItems, setAccessoryItems] = useState<AccessoryPurchase[]>([]);
-  const [productionItems, setProductionItems] = useState<ProductionBatch[]>([]);
+  const [fabricAll, setFabricItems] = useState<FabricPurchase[]>([]);
+  const [accessoryAll, setAccessoryItems] = useState<AccessoryPurchase[]>([]);
+  const [productionAll, setProductionItems] = useState<ProductionBatch[]>([]);
+  // Lists follow the shared period filter; amounts owed stay all-time
+  const { range, label: periodLabel } = usePeriod();
+  const [allDates, setAllDates] = useState(false);
+  const inRange = (d: string) => allDates || (d >= range.from && d <= range.to);
+  const fabricItems = fabricAll.filter(i => inRange(i.date));
+  const accessoryItems = accessoryAll.filter(i => inRange(i.date));
+  const productionItems = productionAll.filter(b => inRange(b.date));
   const [vendors, setVendors] = useState<FinVendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -176,12 +184,16 @@ export const FinanceProcurement: React.FC = () => {
   const fabricVendors = vendors.filter(v => v.category === 'fabric' || v.category === 'other');
   const accessoryVendors = vendors.filter(v => v.category === 'accessories' || v.category === 'other');
 
-  const fabricOutstanding = fabricItems.reduce((s, i) => s + i.balance_due, 0);
-  const accessoryOutstanding = accessoryItems.reduce((s, i) => s + i.balance_due, 0);
-  const activeBatches = productionItems.filter(b => b.status === 'In Progress').length;
+  const fabricOutstanding = fabricAll.reduce((s, i) => s + i.balance_due, 0);
+  const accessoryOutstanding = accessoryAll.reduce((s, i) => s + i.balance_due, 0);
+  const activeBatches = productionAll.filter(b => b.status === 'In Progress').length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#334155', alignSelf: 'flex-end', cursor: 'pointer' }}>
+        <input type="checkbox" checked={allDates} onChange={e => setAllDates(e.target.checked)} />
+        Show all dates <span style={{ color: '#94a3b8' }}>(otherwise {periodLabel}; balances owed are always all-time)</span>
+      </label>
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 12 }}>
         <StatTile label="Fabric Purchases" value={fmt(fabricItems.reduce((s, i) => s + i.total_cost, 0))} sub={`${fabricItems.length} orders`} />

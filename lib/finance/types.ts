@@ -10,7 +10,7 @@ export const metaUsdToBdt = (usd: number) => usd * META_USD_TO_BDT * (1 + META_V
  * `courier_fees` is synthetic — it comes from Pathao order fees, not the ledger.
  */
 export const COST_GROUPS = [
-  { key: 'production', label: 'Production', cats: ['fabric', 'accessories', 'sewing', 'packaging_material'] },
+  { key: 'production', label: 'Production', cats: ['product_cost', 'fabric', 'accessories', 'sewing', 'packaging_material'] },
   { key: 'marketing',  label: 'Marketing',  cats: ['ads_meta', 'ads_google', 'photoshoot'] },
   { key: 'overhead',   label: 'Rent & Salary', cats: ['rent', 'salary'] },
   { key: 'logistics',  label: 'Logistics',  cats: ['courier_fees', 'transport'] },
@@ -20,8 +20,10 @@ export const COST_GROUPS = [
 export type CostGroupKey = typeof COST_GROUPS[number]['key'];
 
 export interface PLBreakdown {
+  /** total = Pathao collected only; the other fields are manual income, outside revenue */
   revenue: { pathao_cod: number; sales_prepaid: number; sales_cod: number; other_income: number; total: number };
-  cogs: { fabric: number; accessories: number; sewing: number; packaging_material: number; total: number };
+  /** product_cost = units sold × unit cost (per-unit method); the rest are purchases (cash method) */
+  cogs: { product_cost: number; fabric: number; accessories: number; sewing: number; packaging_material: number; total: number };
   opex: {
     rent: number; salary: number; transport: number; courier_fees: number;
     ads_meta: number; ads_google: number; photoshoot: number; miscellaneous: number; total: number;
@@ -29,6 +31,10 @@ export interface PLBreakdown {
   groups: Record<CostGroupKey, number>;
   expenses: number;
   gross_profit: number;
+  /** Gross profit − operating expenses */
+  operating_profit: number;
+  /** Manually logged income (prepaid / direct / other), added after operating profit */
+  other_income: number;
   gross_margin: number;
   net_profit: number;
   net_margin: number;
@@ -87,5 +93,16 @@ export interface FinanceSummary {
   txCount: number;
   invoice: InvoiceSummary | null;
   sources: { meta: 'api' | 'ledger'; pathao: boolean; fixedCosts: number };
+  cogs: {
+    method: 'per_unit' | 'cash';
+    unitsSold: number;
+    /** Share of units priced with a product-specific cost rather than the default */
+    pricedShare: number;
+    /** Share of invoiced deliveries linked to a WooCommerce order */
+    linkedShare: number;
+    fallbackUnitCost: number;
+    /** Production purchases in the range — inventory under the per-unit method */
+    inventoryPurchased: number;
+  };
   warnings: string[];
 }

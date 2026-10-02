@@ -21,12 +21,9 @@ type Line =
 
 const LINES: Line[] = [
   { section: 'Revenue' },
-  { label: 'Pathao COD (invoiced)', get: pl => pl.revenue.pathao_cod, kind: 'revenue', indent: true },
-  { label: 'Prepaid sales (bKash / cash)', get: pl => pl.revenue.sales_prepaid, kind: 'revenue', indent: true },
-  { label: 'Other COD / direct', get: pl => pl.revenue.sales_cod, kind: 'revenue', indent: true },
-  { label: 'Other income', get: pl => pl.revenue.other_income, kind: 'revenue', indent: true },
-  { label: 'Total revenue', get: pl => pl.revenue.total, kind: 'revenue', total: true },
+  { label: 'Total revenue (Pathao collected)', get: pl => pl.revenue.total, kind: 'revenue', total: true },
   { section: 'Cost of goods sold' },
+  { label: 'Product cost (units sold × unit cost)', get: pl => pl.cogs.product_cost, kind: 'cost', indent: true },
   { label: 'Fabric', get: pl => pl.cogs.fabric, kind: 'cost', indent: true },
   { label: 'Accessories', get: pl => pl.cogs.accessories, kind: 'cost', indent: true },
   { label: 'Sewing / production', get: pl => pl.cogs.sewing, kind: 'cost', indent: true },
@@ -44,6 +41,8 @@ const LINES: Line[] = [
   { label: 'Transport', get: pl => pl.opex.transport, kind: 'cost', indent: true },
   { label: 'Miscellaneous', get: pl => pl.opex.miscellaneous, kind: 'cost', indent: true },
   { label: 'Total operating expenses', get: pl => pl.opex.total, kind: 'cost', total: true },
+  { label: 'Operating profit', get: pl => pl.operating_profit, kind: 'profit' },
+  { label: 'Other income (prepaid / direct, logged by hand)', get: pl => pl.other_income, kind: 'revenue', indent: true },
   { label: 'Net profit', get: pl => pl.net_profit, kind: 'profit', highlight: true },
   { label: 'Net margin', get: pl => pl.net_margin, kind: 'pct' },
 ];

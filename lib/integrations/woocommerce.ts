@@ -28,7 +28,7 @@ type WooOrder = {
     address_1?: string;
     city?: string;
   };
-  line_items?: Array<{ name: string }>;
+  line_items?: Array<{ name: string; quantity?: number; total?: string }>;
   fee_lines?: Array<{ name: string }>;
   meta_data?: WooMeta[];
 };
@@ -106,8 +106,10 @@ function normalizeStatus(wooStatus: string, threadopsStatus?: string): OrderStat
   if (threadopsStatus === "packed") return "packed";
   if (threadopsStatus === "hold") return "hold";
   if (threadopsStatus === "returned") return "returned";
+  if (wooStatus === "packed") return "packed";
+  if (wooStatus === "dispatched") return "dispatched";
   if (wooStatus === "on-hold") return "hold";
-  if (wooStatus === "refunded" || wooStatus === "cancelled") return "returned";
+  if (wooStatus === "refunded" || wooStatus === "cancelled" || wooStatus === "failed") return "returned";
   if (wooStatus === "completed") return "completed";
   if (wooStatus === "processing" || wooStatus === "pending") return "paid";
   return "paid";
@@ -146,7 +148,18 @@ export function normalizeWooOrder(order: WooOrder): CommerceOrder {
     margin: "Pending",
     notes: order.customer_note || "Synced from WooCommerce.",
     dateCreated: order.date_created || "",
+    lineItems: lineItems.map((item) => ({
+      name: item.name,
+      quantity: Number(item.quantity) || 0,
+      total: Number(item.total) || 0,
+    })),
   };
+}
+
+/** Order count per WooCommerce status slug across the whole store (one request). */
+export async function getWooStatusTotals(): Promise<Record<string, number>> {
+  const rows = await wooFetch<Array<{ slug: string; total: number }>>("/reports/orders/totals");
+  return Object.fromEntries(rows.map((r) => [r.slug, Number(r.total) || 0]));
 }
 
 /**
@@ -465,4 +478,85 @@ export async function updateWooOrderStatus(wooId: number, status: string): Promi
   } catch (e) {
     console.warn(`updateWooOrderStatus(${wooId}, ${status}):`, e);
   }
+}
+
+export type WooLineItem = { product_id: number; name: string; quantity: number; total: number };
+
+/**
+ * Line items for the given WooCommerce order ids, fetched 100 at a time.
+ * Orders that no longer exist are simply absent from the result.
+ */
+export async function getWooOrderLineItems(ids: number[]): Promise<Map<number, WooLineItem[]>> {
+  const out = new Map<number, WooLineItem[]>();
+  const unique = [...new Set(ids.filter(n => Number.isInteger(n) && n > 0))];
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const params = new URLSearchParams({
+      include: chunk.join(','),
+      per_page: '100',
+      status: 'any',
+      _fields: 'id,line_items',
+    });
+    const rows = await wooFetch<Array<{ id: number; line_items?: Array<{ product_id: number; name: string; quantity: number; total: string }> }>>(`/orders?${params}`);
+    for (const r of rows) {
+      out.set(r.id, (r.line_items || []).map(li => ({
+        product_id: li.product_id, name: li.name, quantity: Number(li.quantity) || 0, total: Number(li.total) || 0,
+      })));
+    }
+  }
+  return out;
+}
+
+export type WooStockProduct = {
+  id: number;
+  name: string;
+  price: number;
+  stock: number;
+  variants: { id: number; size: string; stock: number }[];
+};
+
+/** Stock on hand for every published product (variable products summed over their variations). */
+export async function getWooStockLevels(): Promise<WooStockProduct[]> {
+  type P = { id: number; name: string; price: string; type: string; stock_quantity: number | null; variations: number[] };
+  type V = { id: number; stock_quantity: number | null; attributes: { name: string; option: string }[] };
+  const products: P[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const rows = await wooFetch<P[]>(`/products?per_page=100&page=${page}&status=publish&_fields=id,name,price,type,stock_quantity,variations`);
+    products.push(...rows);
+    if (rows.length < 100) break;
+  }
+  return Promise.all(products.map(async (p) => {
+    let variants: WooStockProduct["variants"] = [];
+    if (p.type === "variable" && p.variations.length) {
+      const vs = await wooFetch<V[]>(`/products/${p.id}/variations?per_page=100&_fields=id,stock_quantity,attributes`);
+      variants = vs.map((v) => ({
+        id: v.id,
+        size: v.attributes.map((a) => a.option).join(" / ") || "—",
+        stock: Math.max(0, v.stock_quantity ?? 0),
+      }));
+    }
+    const stock = variants.length ? variants.reduce((s, v) => s + v.stock, 0) : Math.max(0, p.stock_quantity ?? 0);
+    return { id: p.id, name: p.name, price: Number.parseFloat(p.price) || 0, stock, variants };
+  }));
+}
+
+/** Units sold per product (and variation) on orders placed since `after` (YYYY-MM-DD), cancelled/refunded excluded. */
+export async function getWooUnitsSold(after: string): Promise<{ productId: number; variationId: number; quantity: number; date: string }[]> {
+  type O = { id: number; date_created: string; line_items: { product_id: number; variation_id: number; quantity: number }[] };
+  const out: { productId: number; variationId: number; quantity: number; date: string }[] = [];
+  for (let page = 1; page <= 50; page++) {
+    const params = new URLSearchParams({
+      after: `${after}T00:00:00`, per_page: "100", page: String(page),
+      status: "processing,on-hold,completed,packed,dispatched,pending",
+      _fields: "id,date_created,line_items",
+    });
+    const rows = await wooFetch<O[]>(`/orders?${params}`);
+    for (const o of rows) {
+      for (const li of o.line_items || []) {
+        out.push({ productId: li.product_id, variationId: li.variation_id || 0, quantity: Number(li.quantity) || 0, date: o.date_created.slice(0, 10) });
+      }
+    }
+    if (rows.length < 100) break;
+  }
+  return out;
 }

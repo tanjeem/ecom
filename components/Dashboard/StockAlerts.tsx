@@ -10,9 +10,11 @@ interface StockAlertItem {
 
 interface StockAlertsProps {
   alerts: StockAlertItem[];
+  /** Height of the scrolling list */
+  maxHeight?: number;
 }
 
-export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
+export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts, maxHeight = 440 }) => {
   return (
     <div className="alert-list" id="stock-alerts" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {alerts.length === 0 ? (
@@ -40,7 +42,7 @@ export const StockAlerts: React.FC<StockAlertsProps> = ({ alerts }) => {
         <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: 8 }}>
           {alerts.length} variant{alerts.length === 1 ? '' : 's'} low · {alerts.filter(a => a.current <= 1).length} critical (≤1 left)
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, minHeight: 0, maxHeight: 440 }}>
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, minHeight: 0, maxHeight }}>
           {[...alerts].sort((a, b) => a.current - b.current).map((alert) => {
             const critical = alert.current <= 1;
             return (

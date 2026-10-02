@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, ArrowLeftRight, Package, Building2, BarChart2, Repeat2, Megaphone } from 'lucide-react';
+import { LayoutDashboard, ArrowLeftRight, Package, Building2, BarChart2, Repeat2, Megaphone, Shirt, RotateCcw, Settings } from 'lucide-react';
 import { FinanceOverview } from '@/components/Finance/FinanceOverview';
 import { FinanceTransactions } from '@/components/Finance/FinanceTransactions';
 import { FinanceProcurement } from '@/components/Finance/FinanceProcurement';
@@ -9,22 +9,28 @@ import { FinanceVendors } from '@/components/Finance/FinanceVendors';
 import { FinanceReports } from '@/components/Finance/FinanceReports';
 import { FinanceFixedCosts } from '@/components/Finance/FinanceFixedCosts';
 import { FinanceAds } from '@/components/Finance/FinanceAds';
+import { FinanceProducts } from '@/components/Finance/FinanceProducts';
+import { FinanceReturns } from '@/components/Finance/FinanceReturns';
+import { FinanceSettings } from '@/components/Finance/FinanceSettings';
 import { PeriodProvider, PeriodBar } from '@/components/Finance/period';
 
-type Tab = 'overview' | 'transactions' | 'procurement' | 'vendors' | 'reports' | 'fixed-costs' | 'ads';
+type Tab = 'overview' | 'transactions' | 'procurement' | 'vendors' | 'reports' | 'products' | 'returns' | 'fixed-costs' | 'ads' | 'settings';
 
 const TABS: { id: Tab; label: string; icon: React.FC<any> }[] = [
   { id: 'overview',      label: 'Overview',      icon: LayoutDashboard },
   { id: 'transactions',  label: 'Transactions',  icon: ArrowLeftRight },
   { id: 'reports',       label: 'P&L Report',    icon: BarChart2 },
+  { id: 'products',      label: 'Products',      icon: Shirt },
+  { id: 'returns',       label: 'Returns',       icon: RotateCcw },
   { id: 'ads',           label: 'Ads',           icon: Megaphone },
   { id: 'fixed-costs',   label: 'Fixed Costs',   icon: Repeat2 },
   { id: 'procurement',   label: 'Procurement',   icon: Package },
   { id: 'vendors',       label: 'Vendors',       icon: Building2 },
+  { id: 'settings',      label: 'Settings',      icon: Settings },
 ];
 
 // Tabs driven by the shared period filter
-const PERIOD_TABS = new Set<Tab>(['overview', 'transactions', 'reports']);
+const PERIOD_TABS = new Set<Tab>(['overview', 'transactions', 'reports', 'products', 'returns', 'ads', 'procurement']);
 const TAB_KEY = 'finance.tab.v1';
 
 export const FinanceView: React.FC = () => {
@@ -88,6 +94,9 @@ export const FinanceView: React.FC = () => {
         {activeTab === 'vendors'      && <FinanceVendors />}
         {activeTab === 'ads'          && <FinanceAds />}
         {activeTab === 'reports'      && <FinanceReports />}
+        {activeTab === 'products'     && <FinanceProducts />}
+        {activeTab === 'returns'      && <FinanceReturns />}
+        {activeTab === 'settings'     && <FinanceSettings />}
       </section>
     </PeriodProvider>
   );

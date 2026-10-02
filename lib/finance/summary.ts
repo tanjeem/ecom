@@ -13,6 +13,10 @@
 // - Fixed costs accrue daily (monthly amount ÷ days in month) up to today, so
 //   any window — a week, a partial month — carries its fair share.
 // - Live Pathao orders are used only for the "in progress" count.
+// - Production cost (default "per_unit" method): units on each invoiced
+//   delivery × that product's unit cost, so cost follows sales. Fabric,
+//   sewing, accessory and packaging purchases are then inventory (cash out,
+//   not P&L). The "cash" method expenses those purchases when paid instead.
 
 import { supabase } from '@/lib/supabase';
 import { getPathaoInvoiceLines, getPathaoPortalOrders, pathaoFetch, type PathaoPortalOrder } from '@/lib/integrations/pathao';
@@ -24,6 +28,7 @@ import {
 } from './periods';
 import { metaUsdToBdt, type FinanceSummary, type SeriesPoint } from './types';
 import { CAT_TO_GROUP, emptyGroups, plFromCats } from './pl';
+import { buildCostContext, costOfDelivery, getFinanceSettings } from './products';
 
 // Live order statuses that are finished (or dead) — everything else is still in progress
 const CLOSED = new Set([
@@ -39,7 +44,7 @@ type TxRow = {
 };
 
 /** Supabase caps a select at 1000 rows — page through so long ranges stay complete. */
-async function fetchTransactions(from: string, to: string): Promise<TxRow[]> {
+export async function fetchTransactions(from: string, to: string): Promise<TxRow[]> {
   const PAGE = 1000;
   const rows: TxRow[] = [];
   for (let offset = 0; offset < 100_000; offset += PAGE) {
@@ -83,7 +88,7 @@ export async function buildFinanceSummary(opts: {
   const hasPast = from <= accrueTo;
   const warnings: string[] = [];
 
-  const [txRes, fixedRes, overridesRes, pathaoRes, metaRes, invoiceRes, linesRes] = await Promise.allSettled([
+  const [txRes, fixedRes, overridesRes, pathaoRes, metaRes, invoiceRes, linesRes, settingsRes] = await Promise.allSettled([
     fetchTransactions(from, to),
     supabase.from('fin_fixed_costs').select('id, category, default_amount'),
     supabase.from('fin_fixed_cost_months').select('fixed_cost_id, month, amount').gte('month', from.slice(0, 7)).lte('month', to.slice(0, 7)),
@@ -91,7 +96,13 @@ export async function buildFinanceSummary(opts: {
     hasPast ? metaDailyCached(from, accrueTo) : Promise.resolve(null),
     opts.includeInvoice ? pathaoFetch<any>('/merchant/invoice-summary') : Promise.resolve(null),
     getPathaoInvoiceLines(),
+    getFinanceSettings(),
   ]);
+  const settings = settingsRes.status === 'fulfilled'
+    ? settingsRes.value
+    : { cogsMethod: 'cash' as const, defaultUnitCost: null, pathaoPayoutAccount: null };
+  const perUnit = settings.cogsMethod === 'per_unit';
+  let inventoryPurchased = 0;
 
   if (txRes.status === 'rejected') throw new Error(`Could not load transactions: ${txRes.reason?.message || txRes.reason}`);
   const txs = txRes.value;
@@ -153,6 +164,10 @@ export async function buildFinanceSummary(opts: {
     }
     // expense
     if (t.category === 'ads_meta' && metaSource === 'api') continue; // API is authoritative
+    if (perUnit && COGS_CATEGORIES.includes(t.category)) {
+      inventoryPurchased += t.amount; // stock bought — costed when it sells
+      continue;
+    }
     const cat = COGS_CATEGORIES.includes(t.category) || OPEX_KEYS.has(t.category) ? t.category : 'miscellaneous';
     add(t.date, cat, t.amount);
     catCounts[cat] = (catCounts[cat] || 0) + 1;
@@ -217,6 +232,32 @@ export async function buildFinanceSummary(opts: {
     }
   }
   if (payoutMethod.inflow) methods.set('Pathao payout', payoutMethod);
+
+  // Per-unit production cost for every invoiced delivery in the range
+  const cogsInfo = { method: settings.cogsMethod, unitsSold: 0, pricedShare: 0, linkedShare: 0, fallbackUnitCost: 0, inventoryPurchased };
+  const deliveriesInRange = invoiceLines.filter(l => l.type === 'delivery' && l.invoice_date >= from && l.invoice_date <= to);
+  if (perUnit && deliveriesInRange.length) {
+    try {
+      const ctx = await buildCostContext(deliveriesInRange, settings);
+      let priced = 0;
+      let linked = 0;
+      for (const l of deliveriesInRange) {
+        const c = costOfDelivery(l, ctx);
+        add(l.invoice_date, 'product_cost', c.cost);
+        cogsInfo.unitsSold += c.units;
+        priced += c.pricedUnits;
+        if (c.linked) linked++;
+      }
+      cogsInfo.pricedShare = cogsInfo.unitsSold ? priced / cogsInfo.unitsSold : 0;
+      cogsInfo.linkedShare = linked / deliveriesInRange.length;
+      cogsInfo.fallbackUnitCost = ctx.fallbackUnitCost;
+      if (!ctx.fallbackUnitCost && cogsInfo.pricedShare < 1) {
+        warnings.push('No default unit cost is set, so unpriced products count as ৳0 production cost. Set product costs in Finance → Settings.');
+      }
+    } catch (e: any) {
+      warnings.push(`Production cost could not be calculated: ${e.message}`);
+    }
+  }
   orders.courierFees = totalCats.courier_fees || 0;
   orders.aov = orders.delivered.count ? orders.delivered.amount / orders.delivered.count : 0;
   const closed = orders.delivered.count + orders.returned.count;
@@ -289,9 +330,10 @@ export async function buildFinanceSummary(opts: {
     txCount: txs.length,
     invoice,
     sources: { meta: metaSource, pathao: pathaoOk, fixedCosts: fixedCosts.length },
+    cogs: cogsInfo,
     warnings,
   };
 }
 
 export const categoryLabel = (cat: string) =>
-  cat === 'pathao_cod' ? 'Pathao COD (invoiced)' : cat === 'courier_fees' ? 'Pathao fees' : ALL_CATEGORIES[cat] || cat;
+  cat === 'pathao_cod' ? 'Pathao COD (invoiced)' : cat === 'product_cost' ? 'Product cost' : cat === 'courier_fees' ? 'Pathao fees' : ALL_CATEGORIES[cat] || cat;

@@ -987,7 +987,8 @@ tbody tr:hover {
 
 @media (max-width: 1120px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    /* minmax(0, …) lets wide tables/charts scroll inside the page instead of widening it */
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {

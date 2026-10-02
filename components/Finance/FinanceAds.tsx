@@ -28,6 +28,8 @@ import {
 } from 'recharts';
 import type { MetaCampaign } from '@/lib/integrations/meta';
 import { fmt } from './shared';
+import { META_USD_TO_BDT, META_VAT_RATE } from '@/lib/finance/types';
+import { usePeriod } from './period';
 import { StatTile, LoadingState, ErrorState } from './ui';
 
 interface ReconciledMonth {
@@ -44,6 +46,8 @@ interface ReconciledMonth {
   deliveredOrders: number;
   returnedOrders: number;
   deliveredAmount: number; // BDT
+  pathaoFees?: number; // BDT, actual invoiced fees
+  productCost?: number | null; // BDT, units sold × unit cost (null when costing is "when paid")
 }
 
 // Format as USD since Meta Ads account is denominated in USD
@@ -54,6 +58,7 @@ const fmtUSDDec = (n: number) =>
   `$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export const FinanceAds: React.FC = () => {
+  const { range, label: periodLabel } = usePeriod();
   const [data, setData] = useState<ReconciledMonth[]>([]);
   const [campaigns, setCampaigns] = useState<MetaCampaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,8 +71,9 @@ export const FinanceAds: React.FC = () => {
   const [showModelingPanel, setShowModelingPanel] = useState(false);
 
   // Dynamic Parameter Modeling Parameters
-  const [exchangeRate, setExchangeRate] = useState<number>(130);
-  const [vatRate, setVatRate] = useState<number>(15);
+  // Same conversion the rest of Finance uses (lib/finance/types)
+  const [exchangeRate, setExchangeRate] = useState<number>(META_USD_TO_BDT);
+  const [vatRate, setVatRate] = useState<number>(META_VAT_RATE * 100);
   const [avgCogs, setAvgCogs] = useState<number>(750);
   const [avgShipping, setAvgShipping] = useState<number>(120);
   const [avgReturnCost, setAvgReturnCost] = useState<number>(60);
@@ -126,7 +132,10 @@ export const FinanceAds: React.FC = () => {
   }
 
   // 1. Process data for outliers (Meta pixel tracking anomaly)
-  const processedData = data.map(item => {
+  // Months overlapping the shared period filter
+  const fromMonth = range.from.slice(0, 7);
+  const toMonth = range.to.slice(0, 7);
+  const processedData = data.filter(item => item.month >= fromMonth && item.month <= toMonth).map(item => {
     const isOutlier = item.purchases > 0 && (item.revenue / item.purchases) > 100;
     return {
       ...item,
@@ -164,8 +173,10 @@ export const FinanceAds: React.FC = () => {
     // Shipping fee
     const shippingCost = deliveredOrders * avgShipping;
 
-    // CM2 Profit
-    const cm2Profit = storeRevenueUnified - (deliveredOrders * avgCogs) - actualSpendBDT - shippingCost - returnLoss;
+    // CM2 Profit — actual unit costs and invoiced Pathao fees when available, else the modelling assumptions
+    const productCost = item.productCost ?? deliveredOrders * avgCogs;
+    const deliveryCosts = item.pathaoFees != null ? item.pathaoFees + returnedOrders * avgReturnCost : shippingCost + returnLoss;
+    const cm2Profit = storeRevenueUnified - productCost - actualSpendBDT - deliveryCosts;
     const cm2Margin = storeRevenueUnified > 0 ? parseFloat(((cm2Profit / storeRevenueUnified) * 100).toFixed(1)) : 0;
 
     // Creative metrics
@@ -373,7 +384,9 @@ export const FinanceAds: React.FC = () => {
                 <Zap size={13} color="#64748b" />
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569' }}>Modeling Assumptions</span>
                 <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-                  Exchange ৳{exchangeRate}/$ · VAT {vatRate}% · COGS ৳{avgCogs} · Ship ৳{avgShipping} · Return loss ৳{avgReturnCost}
+                  {periodLabel} · Exchange ৳{exchangeRate}/$ · VAT {vatRate}% ·{' '}
+                  {data.some(d => d.productCost != null) ? 'actual unit costs' : `COGS ৳${avgCogs}`} ·{' '}
+                  {data.some(d => d.pathaoFees != null) ? 'actual Pathao fees' : `Ship ৳${avgShipping}`} · Return handling ৳{avgReturnCost}
                 </span>
               </div>
               <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>{showModelingPanel ? '▲ Hide' : '▼ Edit'}</span>

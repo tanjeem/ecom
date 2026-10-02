@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { OrderStatus } from "@/lib/types/commerce";
 import { dashboardCache } from "@/lib/cache";
+import { STATUS_TO_WOO, isOrderStatus } from "@/lib/orderStatus";
 
 function getWooBaseURL() {
   return (process.env.WOOCOMMERCE_URL || "").replace(/\/$/, "");
@@ -11,14 +12,6 @@ function wooAuth() {
     `${process.env.WOOCOMMERCE_CONSUMER_KEY}:${process.env.WOOCOMMERCE_CONSUMER_SECRET}`,
   ).toString("base64");
 }
-
-const STATUS_TO_WOO: Record<OrderStatus, string> = {
-  paid: "processing",
-  packed: "processing", // "packed" is stored in meta, WooCommerce status stays processing
-  hold: "on-hold",
-  returned: "refunded",
-  completed: "completed",
-};
 
 export async function PATCH(
   request: NextRequest,
@@ -35,18 +28,15 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const validStatuses: OrderStatus[] = ["paid", "packed", "hold", "returned", "completed"];
-  if (!validStatuses.includes(newStatus)) {
+  if (!isOrderStatus(newStatus)) {
     return NextResponse.json({ error: `Invalid status: ${newStatus}` }, { status: 400 });
   }
 
   const wooStatus = STATUS_TO_WOO[newStatus];
 
-  // For "packed" we store the status in meta and leave WooCommerce status as processing
-  // For all others we clear the meta and update WooCommerce status directly
-  const metaData = newStatus === "packed"
-    ? [{ key: "_threadops_status", value: "packed" }]
-    : [{ key: "_threadops_status", value: "" }];
+  // The store now has real "packed"/"dispatched" statuses, so write the status
+  // itself and clear the legacy _threadops_status override that used to fake "packed".
+  const metaData = [{ key: "_threadops_status", value: "" }];
 
   try {
     const res = await fetch(`${getWooBaseURL()}/wp-json/wc/v3/orders/${wooId}`, {

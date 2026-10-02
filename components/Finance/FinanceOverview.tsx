@@ -13,6 +13,7 @@ import { todayISO, type Granularity, type PeriodMode } from '@/lib/finance/perio
 import { fmt, fmtCompact, fmtPct, CHART, getCategoryLabel } from './shared';
 import { Card, KpiCard, LoadingState, ErrorState, Segmented, pctChange, Delta } from './ui';
 import { usePeriod, useFinanceSummary, GranularityToggle } from './period';
+import { CashPositionCard, BudgetCard } from './OverviewPanels';
 
 // ─── chart helpers ────────────────────────────────────────────────────────────
 
@@ -94,7 +95,9 @@ function buildInsights(cur: FinanceSummary, prev: FinanceSummary | null, compare
 
   // Margins — with no production costs logged, gross margin is meaningless
   if (pl.revenue.total > 0 && pl.cogs.total === 0) {
-    out.push({ tone: 'warn', text: <>No production costs (fabric, sewing, accessories) are logged for this period, so <b>gross margin and profit are overstated</b>. Log them in Transactions or Procurement.</> });
+    out.push({ tone: 'warn', text: cur.cogs.method === 'per_unit'
+      ? <>Production cost is ৳0 because no unit cost is set. <b>Gross margin and profit are overstated</b> — set product costs in Products or Settings.</>
+      : <>No production costs (fabric, sewing, accessories) are logged for this period, so <b>gross margin and profit are overstated</b>. Log them in Transactions or switch to per-unit costing in Settings.</> });
   } else if (pl.revenue.total > 0 && pl.gross_margin < 40) {
     out.push({ tone: 'warn', text: <>Gross margin is <b>{fmtPct(pl.gross_margin)}</b> — below a healthy 40%+ for apparel. Check production costs or pricing.</> });
   }
@@ -117,7 +120,7 @@ function buildInsights(cur: FinanceSummary, prev: FinanceSummary | null, compare
   return out.slice(0, 6);
 }
 
-const catName = (c: string) => (c === 'courier_fees' ? 'Pathao fees' : getCategoryLabel(c));
+const catName = (c: string) => (c === 'courier_fees' ? 'Pathao fees' : c === 'product_cost' ? 'Product cost (units sold)' : getCategoryLabel(c));
 
 const INSIGHT_STYLE: Record<Insight['tone'], { icon: React.FC<any>; color: string; bg: string }> = {
   good: { icon: CheckCircle2, color: '#15803d', bg: '#f0fdf4' },
@@ -415,6 +418,12 @@ export const FinanceOverview: React.FC<{ onOpenTab?: (tab: string) => void }> = 
         </Card>
       </div>
 
+      {/* Cash & budgets */}
+      <div className="fin-grid-2">
+        <CashPositionCard onOpenTab={onOpenTab} />
+        <BudgetCard data={data} range={range} isCurrent={isCurrent} onOpenTab={onOpenTab} />
+      </div>
+
       {/* Top cost lines + vendors */}
       <div className="fin-grid-2">
         <Card title="Biggest cost lines" subtitle={p ? `With change ${compareText}` : undefined}>
@@ -469,6 +478,9 @@ export const FinanceOverview: React.FC<{ onOpenTab?: (tab: string) => void }> = 
         Pathao revenue follows paid Pathao invoices only: cash collected on invoiced deliveries, dated by invoice, with Pathao's invoiced fees as courier cost. Prepaid & direct sales come from the ledger.
         Meta spend {data.sources.meta === 'api' ? 'comes from the Meta API (USD × ৳130 + 15% VAT)' : 'comes from logged entries (Meta API not connected)'}.
         Fixed costs ({data.sources.fixedCosts}) accrue daily up to today.
+        {data.cogs.method === 'per_unit'
+          ? ` Production cost = ${Math.round(data.cogs.unitsSold)} units sold × unit cost (${Math.round(data.cogs.pricedShare * 100)}% priced per product, rest at ${fmt(data.cogs.fallbackUnitCost)}); ${fmt(data.cogs.inventoryPurchased)} of production purchases this period went to stock.`
+          : ' Production purchases are expensed when paid.'}
       </p>
     </div>
   );

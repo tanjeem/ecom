@@ -58,6 +58,8 @@ export interface FinTransaction {
   vendor_name?: string;
   reference_no?: string;
   notes?: string;
+  receipt_path?: string | null;
+  recurring_id?: string | null;
   created_at: string;
 }
 
