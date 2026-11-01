@@ -112,11 +112,13 @@ export const InventoryView: React.FC = () => {
     </button>
   );
 
+  const regularValue = products.reduce((sum, p) => sum + p.regularValue, 0);
+
   return (
     <section className="view" id="inventory-view" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div className="fin-kpi-grid inv-kpis">
         <KpiCard label="Units on hand" icon={Boxes} value={t.units.toLocaleString()} sub={`${products.length} products · ${skus} sizes/SKUs`} />
-        <KpiCard label="Stock value" icon={Wallet} value={fmt(t.retailValue)} sub={`${t.units.toLocaleString()} pieces at today’s price · cost ${fmtCompact(t.costValue)}`} />
+        <KpiCard label="Stock value" icon={Wallet} value={fmt(regularValue)} sub={`at regular price · ${fmtCompact(t.retailValue)} at today’s sale price · cost ${fmtCompact(t.costValue)}`} />
         <KpiCard label="Sell-through (30 days)" icon={Gauge} value={`${storeSellThrough.toFixed(1)}%`}
           tone={storeSellThrough >= 25 ? 'good' : storeSellThrough >= 12 ? 'warn' : 'bad'}
           sub={`${t.sold30} sold of ${(t.sold30 + t.units).toLocaleString()} available`} />
