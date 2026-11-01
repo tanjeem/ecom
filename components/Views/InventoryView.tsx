@@ -116,7 +116,7 @@ export const InventoryView: React.FC = () => {
     <section className="view" id="inventory-view" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div className="fin-kpi-grid inv-kpis">
         <KpiCard label="Units on hand" icon={Boxes} value={t.units.toLocaleString()} sub={`${products.length} products · ${skus} sizes/SKUs`} />
-        <KpiCard label="Stock value" icon={Wallet} value={fmt(t.retailValue)} sub={`at today’s selling price · cost ${fmtCompact(t.costValue)}`} />
+        <KpiCard label="Stock value" icon={Wallet} value={fmt(t.retailValue)} sub={`${t.units.toLocaleString()} pieces at today’s price · cost ${fmtCompact(t.costValue)}`} />
         <KpiCard label="Sell-through (30 days)" icon={Gauge} value={`${storeSellThrough.toFixed(1)}%`}
           tone={storeSellThrough >= 25 ? 'good' : storeSellThrough >= 12 ? 'warn' : 'bad'}
           sub={`${t.sold30} sold of ${(t.sold30 + t.units).toLocaleString()} available`} />
@@ -320,64 +320,83 @@ const SaleValue = ({ products }: { products: Product[] }) => {
   const breakEven = retail ? (cost / retail) * 100 : 0;
   const label = (l: number) => (l === 100 ? 'No discount' : `${100 - l}% off`);
 
+  const tiny = { fontSize: '0.66rem', fontWeight: 800, textTransform: 'uppercase' as const, letterSpacing: '0.05em' };
+  const big = { fontSize: '1.55rem', fontWeight: 900, fontVariantNumeric: 'tabular-nums' as const, lineHeight: 1.15, margin: '4px 0 2px' };
+  const maxRev = at(100).revenue || 1;
+
   return (
     <Card title={<span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Wallet size={15} /> What your stock is worth at a sale</span>}
-      subtitle={`Pick a discount to see what all ${units.toLocaleString()} units would bring in`}>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+      subtitle={`All ${units.toLocaleString()} pieces, discounted off the regular price`}>
+      {/* discount picker */}
+      <div role="radiogroup" aria-label="Discount" className="inv-sale-picker" style={{ display: 'grid', gap: 4, padding: 4, background: '#f1f5f9', borderRadius: 10, marginBottom: 14 }}>
         {SALE_LEVELS.map(l => (
-          <button key={l} type="button" onClick={() => setLevel(l)}
-            style={{ border: '1px solid #e2e7ee', borderRadius: 99, padding: '6px 14px', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer',
-              background: level === l ? '#0f172a' : '#fff', color: level === l ? '#fff' : '#334155' }}>
+          <button key={l} type="button" role="radio" aria-checked={level === l} onClick={() => setLevel(l)}
+            style={{ border: 'none', borderRadius: 7, padding: '8px 4px', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap',
+              background: level === l ? '#fff' : 'transparent', color: level === l ? '#0f172a' : '#64748b',
+              boxShadow: level === l ? '0 1px 3px rgba(15,23,42,0.12)' : 'none' }}>
             {label(l)}
           </button>
         ))}
       </div>
 
-      <div style={{ padding: '14px 16px', background: '#f8fafc', borderRadius: 10, marginBottom: 14 }}>
-        <div style={{ fontSize: '0.8rem', color: '#475569' }}>
-          {level === 100 ? 'Sell everything at the regular price' : `Sell everything at ${100 - level}% off the regular price`}, and you
+      {/* result */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <div style={{ padding: '14px 16px', borderRadius: 12, background: '#0f172a', color: '#fff' }}>
+          <div style={{ ...tiny, color: '#94a3b8' }}>You take in</div>
+          <div style={big}>{fmt(sel.revenue)}</div>
+          <div style={{ fontSize: '0.74rem', color: '#cbd5e1' }}>{level === 100 ? 'at the regular price' : `at ${100 - level}% off`}</div>
         </div>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 6 }}>
-          <div>
-            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>take in</div>
-            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>{fmt(sel.revenue)}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>keep as profit</div>
-            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: sel.profit >= 0 ? '#15803d' : '#b91c1c', fontVariantNumeric: 'tabular-nums' }}>{fmt(sel.profit)}</div>
-            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{sel.profit >= 0 ? `${sel.margin.toFixed(0)}% of every sale` : 'a loss — below cost'}</div>
-          </div>
+        <div style={{ padding: '14px 16px', borderRadius: 12, background: sel.profit >= 0 ? '#f0fdf4' : '#fef2f2', border: `1px solid ${sel.profit >= 0 ? '#bbf7d0' : '#fecaca'}` }}>
+          <div style={{ ...tiny, color: sel.profit >= 0 ? '#15803d' : '#b91c1c' }}>You keep (profit)</div>
+          <div style={{ ...big, color: sel.profit >= 0 ? '#15803d' : '#b91c1c' }}>{fmt(sel.profit)}</div>
+          <div style={{ fontSize: '0.74rem', color: '#475569' }}>{sel.profit >= 0 ? `${sel.margin.toFixed(0)}% of every sale, after stock cost` : 'a loss — below cost'}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* every level side by side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '84px minmax(0, 1fr) auto', rowGap: 0, alignItems: 'center', fontSize: '0.78rem' }}>
+        <span style={{ ...tiny, color: '#94a3b8' }}>Discount</span>
+        <span style={{ ...tiny, color: '#94a3b8' }}>Take in</span>
+        <span style={{ ...tiny, color: '#94a3b8', textAlign: 'right' }}>Profit</span>
         {SALE_LEVELS.map(l => {
           const r = at(l);
+          const on = l === level;
+          const cell = { padding: '7px 0', cursor: 'pointer', fontWeight: on ? 800 : 600 } as const;
           return (
-            <button key={l} type="button" onClick={() => setLevel(l)}
-              style={{ display: 'grid', gridTemplateColumns: '92px 1fr 96px', gap: 10, alignItems: 'center', border: 'none', cursor: 'pointer', textAlign: 'left',
-                padding: '5px 8px', borderRadius: 7, background: l === level ? '#eff6ff' : 'transparent', fontSize: '0.78rem' }}>
-              <b style={{ color: '#0f172a' }}>{label(l)}</b>
-              <div style={{ height: 8, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${l}%`, background: l === level ? CHART.revenue : '#cbd5e1', borderRadius: 99 }} />
-              </div>
-              <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#334155' }}>{fmt(r.revenue)}</span>
-            </button>
+            <React.Fragment key={l}>
+              <span onClick={() => setLevel(l)} style={{ ...cell, color: on ? '#0f172a' : '#475569' }}>{label(l)}</span>
+              <span onClick={() => setLevel(l)} style={{ ...cell, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, paddingRight: 12 }}>
+                <span style={{ flex: 1, height: 6, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden', minWidth: 30 }}>
+                  <span style={{ display: 'block', height: '100%', width: `${(r.revenue / maxRev) * 100}%`, background: on ? CHART.revenue : '#cbd5e1', borderRadius: 99 }} />
+                </span>
+                <span style={{ fontVariantNumeric: 'tabular-nums', color: '#0f172a', whiteSpace: 'nowrap' }}>{fmt(r.revenue)}</span>
+              </span>
+              <span onClick={() => setLevel(l)} style={{ ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: r.profit >= 0 ? '#15803d' : '#b91c1c' }}>{fmt(r.profit)}</span>
+            </React.Fragment>
           );
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 14, fontSize: '0.74rem', color: '#475569' }}>
-        <div><b style={{ color: '#0f172a' }}>Right now on the website:</b> {fmt(now)}{nowPct < 99.5 ? ` (about ${Math.round(100 - nowPct)}% off on average)` : ''}</div>
-        <div><b style={{ color: '#0f172a' }}>Stock cost (COGS):</b> {fmt(cost)}</div>
-        <div><b style={{ color: '#0f172a' }}>Don’t go past:</b> {Math.floor(100 - breakEven)}% off — deeper loses money</div>
+      {/* context */}
+      <div className="inv-sale-facts" style={{ display: 'grid', gap: 8, marginTop: 16 }}>
+        {[
+          ['On the website now', fmt(now), nowPct < 99.5 ? `about ${Math.round(100 - nowPct)}% off on average` : 'no sale running'],
+          ['Stock cost (COGS)', fmt(cost), 'what you paid for it'],
+          ['Don’t go past', `${Math.floor(100 - breakEven)}% off`, 'deeper than this loses money'],
+        ].map(([k, v, sub]) => (
+          <div key={k} style={{ padding: '10px 12px', background: '#f8fafc', borderRadius: 9 }}>
+            <div style={{ ...tiny, color: '#64748b' }}>{k}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 900, color: '#0f172a', margin: '2px 0', fontVariantNumeric: 'tabular-nums' }}>{v}</div>
+            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{sub}</div>
+          </div>
+        ))}
       </div>
       {belowCost.length > 0 && level < 100 && (
         <p style={{ margin: '10px 0 0', fontSize: '0.76rem', color: '#b45309' }}>
           At {100 - level}% off, {belowCost.length} product{belowCost.length > 1 ? 's sell' : ' sells'} below cost: {belowCost.slice(0, 5).map(p => p.name).join(', ')}{belowCost.length > 5 ? '…' : ''}.
         </p>
       )}
-      <p style={{ margin: '8px 0 0', fontSize: '0.7rem', color: '#94a3b8' }}>Discounts are off the regular price (before the website sale). Prices and stock are live from WooCommerce; cost comes from Finance → Products. Courier fees and returns aren’t included.</p>
+      <p style={{ margin: '10px 0 0', fontSize: '0.7rem', color: '#94a3b8' }}>Live prices and stock from WooCommerce · cost from Finance → Products · courier fees and returns not included.</p>
     </Card>
   );
 };
