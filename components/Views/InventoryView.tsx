@@ -175,12 +175,13 @@ export const InventoryView: React.FC = () => {
         </div>
 
         <div className="fin-table-scroll">
-          <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse' }}>
             <thead>
               <tr>
                 <th style={th}>Product</th><th style={th}>Stock by size</th><th style={{ ...th, ...num }}>Units</th>
                 <th style={{ ...th, ...num }}>Sold 30d</th><th style={th}>13 weeks</th><th style={{ ...th, ...num }}>Sell-through</th>
                 <th style={{ ...th, ...num }}>Lasts</th><th style={{ ...th, ...num }}>Value at cost</th>
+                <th style={{ ...th, ...num }} title="Units × regular price">Selling value</th>
               </tr>
             </thead>
             <tbody>
@@ -219,9 +220,10 @@ export const InventoryView: React.FC = () => {
                   <td style={{ ...td, ...num }}>{p.sold30 ? `${Math.round(p.sellThrough30 * 100)}%` : '—'}</td>
                   <td style={{ ...td, ...num, fontWeight: 700, color: TONE[coverTone(p.coverDays, p.stock, p.sold30)].color }}>{coverText(p.coverDays, p.stock)}</td>
                   <td style={{ ...td, ...num }}>{fmt(p.costValue)}</td>
+                  <td style={{ ...td, ...num, fontWeight: 700 }}>{fmt(p.regularValue)}</td>
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: '#94a3b8', padding: 30 }}>No products match.</td></tr>}
+              {!rows.length && <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: '#94a3b8', padding: 30 }}>No products match.</td></tr>}
             </tbody>
           </table>
         </div>
