@@ -18,6 +18,9 @@ export interface StockProduct {
   specificCost: boolean;
   costValue: number;
   retailValue: number;
+  /** price before the website sale */
+  regularPrice: number;
+  regularValue: number;
   sold30: number;
   sold90: number;
   /** Order value of the last 90 days (WooCommerce line totals) */
@@ -91,6 +94,7 @@ export async function getStockSnapshot(force = false): Promise<StockSnapshot> {
     return {
       id: l.id, name: l.name, sku: l.sku, image: l.image, price: l.price, stock: l.stock, unitCost, specificCost: !!c,
       costValue: l.stock * unitCost, retailValue: l.stock * l.price,
+      regularPrice: l.regularPrice, regularValue: l.stock * l.regularPrice,
       sold30: s.s30, sold90: s.s90, revenue90: s.rev, weekly: s.weekly,
       sellThrough30: s.s30 + l.stock > 0 ? s.s30 / (s.s30 + l.stock) : 0,
       abc: 'C' as StockProduct['abc'],

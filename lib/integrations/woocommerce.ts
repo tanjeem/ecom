@@ -513,24 +513,29 @@ export type WooStockProduct = {
   sku: string;
   image: string | null;
   price: number;
+  /** price before any sale (equals price when nothing is on sale) */
+  regularPrice: number;
   stock: number;
   variants: { id: number; size: string; sku: string; stock: number }[];
 };
 
 /** Stock on hand for every published product (variable products summed over their variations). */
 export async function getWooStockLevels(): Promise<WooStockProduct[]> {
-  type P = { id: number; name: string; sku: string; price: string; type: string; stock_quantity: number | null; variations: number[]; images?: { src: string }[] };
-  type V = { id: number; sku: string; stock_quantity: number | null; attributes: { name: string; option: string }[] };
+  type P = { id: number; name: string; sku: string; price: string; regular_price: string; type: string; stock_quantity: number | null; variations: number[]; images?: { src: string }[] };
+  type V = { id: number; sku: string; regular_price: string; stock_quantity: number | null; attributes: { name: string; option: string }[] };
   const products: P[] = [];
   for (let page = 1; page <= 10; page++) {
-    const rows = await wooFetch<P[]>(`/products?per_page=100&page=${page}&status=publish&_fields=id,name,sku,price,type,stock_quantity,variations,images`);
+    const rows = await wooFetch<P[]>(`/products?per_page=100&page=${page}&status=publish&_fields=id,name,sku,price,regular_price,type,stock_quantity,variations,images`);
     products.push(...rows);
     if (rows.length < 100) break;
   }
   return Promise.all(products.map(async (p) => {
     let variants: WooStockProduct["variants"] = [];
+    let regular = Number.parseFloat(p.regular_price) || 0;
     if (p.type === "variable" && p.variations.length) {
-      const vs = await wooFetch<V[]>(`/products/${p.id}/variations?per_page=100&_fields=id,sku,stock_quantity,attributes`);
+      const vs = await wooFetch<V[]>(`/products/${p.id}/variations?per_page=100&_fields=id,sku,regular_price,stock_quantity,attributes`);
+      // The parent of a variable product has no regular price of its own
+      regular = Math.max(regular, ...vs.map((v) => Number.parseFloat(v.regular_price) || 0));
       variants = vs.map((v) => ({
         id: v.id,
         size: v.attributes.map((a) => a.option).join(" / ") || "—",
@@ -539,7 +544,8 @@ export async function getWooStockLevels(): Promise<WooStockProduct[]> {
       }));
     }
     const stock = variants.length ? variants.reduce((s, v) => s + v.stock, 0) : Math.max(0, p.stock_quantity ?? 0);
-    return { id: p.id, name: p.name, sku: p.sku || "", image: p.images?.[0]?.src || null, price: Number.parseFloat(p.price) || 0, stock, variants };
+    const price = Number.parseFloat(p.price) || 0;
+    return { id: p.id, name: p.name, sku: p.sku || "", image: p.images?.[0]?.src || null, price, regularPrice: Math.max(regular, price), stock, variants };
   }));
 }
 
