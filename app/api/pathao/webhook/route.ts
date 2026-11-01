@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { canMoveTo, pathaoLabel, pathaoStage, wooStatusForStage } from '@/lib/orders/pathaoStatus';
 import { dashboardCache } from '@/lib/cache';
 import { AccountingEngine } from '@/lib/services/AccountingEngine';
 
 // The secret Pathao requires us to return in the response header
 // Found in: Pathao dashboard → Webhook Integration → Secret
+export const maxDuration = 60;
+
 const WEBHOOK_SECRET = process.env.PATHAO_WEBHOOK_SECRET || 'f3992ecc-59da-4cbe-a049-a13da2018d51';
 
 function wooAuth() {
@@ -35,25 +38,6 @@ async function getOrderPathaoMeta(orderId: number): Promise<{ consignmentId: str
     wooStatus: order.status ?? null,
   };
 }
-
-/**
- * Map a final Pathao delivery outcome to the WooCommerce order status it implies.
- * Accepts either the human status ("Paid Return") or the event slug ("order.paid-return").
- * Non-final states (pickup, in transit, hold, pickup failed…) return null and leave the order alone.
- */
-function wooStatusForPathao(pathaoStatus: string): 'completed' | 'cancelled' | null {
-  const slug = pathaoStatus.toLowerCase().replace(/^order\./, '').trim().replace(/[\s_]+/g, '-');
-  if (['delivered', 'partial-delivery', 'exchange', 'exchanged'].includes(slug)) return 'completed';
-  if ([
-    'return', 'returned', 'paid-return', 'returned-to-merchant',
-    'pickup-cancel', 'pickup-cancelled',
-  ].includes(slug)) return 'cancelled';
-  return null;
-}
-
-// Only orders still in a pre-delivery state are moved; anything set by hand
-// (completed, cancelled, refunded…) is never overwritten by a courier event.
-const AUTO_TRANSITION_FROM = new Set(['processing', 'on-hold', 'pending', 'packed', 'dispatched']);
 
 /**
  * Find WooCommerce order ID by consignment ID stored in meta.
@@ -114,22 +98,25 @@ async function findWooOrderId(consignmentId: string, merchantOrderId?: string): 
  * Update WooCommerce order meta with latest Pathao status + consignment ID.
  */
 async function updateWooOrderMeta(orderId: number, consignmentId: string, status: string) {
-  const nextWooStatus = wooStatusForPathao(status);
+  // Same rules as the background sync (lib/orders/pathaoStatus): picked up → dispatched,
+  // delivered → completed, returned → cancelled; orders only move forward.
+  const nextWooStatus = wooStatusForStage(pathaoStage(status));
   let wooStatusUpdate: string | undefined;
   if (nextWooStatus) {
     const { wooStatus } = await getOrderPathaoMeta(orderId);
-    if (wooStatus && wooStatus !== nextWooStatus && AUTO_TRANSITION_FROM.has(wooStatus)) {
+    if (wooStatus && canMoveTo(wooStatus, nextWooStatus)) {
       wooStatusUpdate = nextWooStatus;
       console.log(`[Pathao Webhook] Order #${orderId}: "${status}" moves WooCommerce status ${wooStatus} → ${nextWooStatus}`);
     }
   }
+  const label = pathaoLabel(status);
 
   const metaData = [
     { key: 'ptc_consignment_id', value: consignmentId },
-    { key: 'ptc_status', value: status },
+    { key: 'ptc_status', value: label },
     // Also write legacy keys for compatibility
     { key: 'pathao_consignment_id', value: consignmentId },
-    { key: 'pathao_status', value: status },
+    { key: 'pathao_status', value: label },
   ];
 
   const res = await fetch(`${wooBase()}/wp-json/wc/v3/orders/${orderId}`, {
@@ -201,7 +188,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, ignored: 'foreign_store' }, { status: 202, headers: secretHeader });
   }
 
-  if (consignmentId && orderStatus) {
+  // Pathao gives webhooks only a few seconds and WooCommerce is slow, so answer
+  // now and update the order after the response has gone out.
+  if (consignmentId && orderStatus) after(async () => {
     try {
       const wooOrderId = await findWooOrderId(consignmentId, merchantOrderId);
       if (wooOrderId) {
@@ -236,7 +225,7 @@ export async function POST(request: NextRequest) {
       console.error('[Pathao Webhook] Error updating WooCommerce:', err);
       // Still return 202 so Pathao doesn't retry endlessly
     }
-  }
+  });
 
   return NextResponse.json({ received: true, event, consignmentId, orderStatus }, { status: 202, headers: secretHeader });
 }

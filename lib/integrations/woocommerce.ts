@@ -580,3 +580,66 @@ export async function getWooStock(productId: number, variationId: number | null)
   const row = await wooFetch<{ stock_quantity: number | null }>(`${path}?_fields=stock_quantity`);
   return row.stock_quantity ?? 0;
 }
+
+export type WooSyncOrder = {
+  id: number;
+  number: string;
+  status: string;
+  total: number;
+  dateCreated: string;
+  phone: string;
+  consignmentId: string;
+  pathaoStatus: string;
+  bookedByUs: boolean;
+};
+
+/** Orders in the given WooCommerce statuses (optionally created after a date), with just what the Pathao sync needs. */
+export async function getWooOrdersForSync(statuses: string[], after?: string): Promise<WooSyncOrder[]> {
+  type Raw = { id: number; number: string; status: string; total: string; date_created: string; billing?: { phone?: string }; meta_data?: { key: string; value: unknown }[] };
+  const out: WooSyncOrder[] = [];
+  for (let page = 1; page <= 100; page++) {
+    const params = new URLSearchParams({
+      status: statuses.join(","), per_page: "100", page: String(page), orderby: "id", order: "desc",
+      _fields: "id,number,status,total,date_created,billing,meta_data",
+    });
+    if (after) params.set("after", `${after}T00:00:00`);
+    const rows = await wooFetch<Raw[]>(`/orders?${params}`);
+    for (const r of rows) {
+      const meta = (k: string) => {
+        const v = r.meta_data?.find((m) => m.key === k)?.value;
+        return typeof v === "string" || typeof v === "number" ? String(v) : "";
+      };
+      out.push({
+        id: r.id, number: String(r.number || r.id), status: r.status, total: Number(r.total) || 0,
+        dateCreated: r.date_created, phone: r.billing?.phone || "",
+        consignmentId: meta("ptc_consignment_id") || meta("pathao_consignment_id"),
+        pathaoStatus: meta("ptc_status") || meta("pathao_status"),
+        bookedByUs: meta("ptc_booked_by_us") === "1",
+      });
+    }
+    if (rows.length < 100) break;
+  }
+  return out;
+}
+
+/** Update many orders in one go (WooCommerce batch API, 50 per request). Returns ids that failed. */
+export async function batchUpdateWooOrders(updates: { id: number; status?: string; meta_data?: { key: string; value: string }[] }[]): Promise<{ updated: number; failed: { id: number; error: string }[] }> {
+  let updated = 0;
+  const failed: { id: number; error: string }[] = [];
+  for (let i = 0; i < updates.length; i += 50) {
+    const chunk = updates.slice(i, i + 50);
+    try {
+      const res = await wooFetch<{ update?: { id: number; error?: { message?: string } }[] }>("/orders/batch", {
+        method: "POST",
+        body: JSON.stringify({ update: chunk }),
+      });
+      for (const r of res.update || []) {
+        if (r.error) failed.push({ id: r.id, error: r.error.message || "update failed" });
+        else updated++;
+      }
+    } catch (e) {
+      for (const u of chunk) failed.push({ id: u.id, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return { updated, failed };
+}

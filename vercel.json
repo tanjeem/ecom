@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/finance",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/pathao-sync",
+      "schedule": "30 1 * * *"
     }
   ]
 }

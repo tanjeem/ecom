@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Download, Send, X, ChevronLeft, ChevronRight, PackageCheck, Truck, CheckCircle2, RotateCcw } from 'lucide-react';
 import { InboxOrderForm, BulkOrderForm, type InboxOrderData } from '@/components/Orders/InboxOrderForm';
 import { OrdersTable } from '@/components/Orders/OrdersTable';
+import { PathaoSyncPanel } from '@/components/Orders/PathaoSyncPanel';
+import type { SyncReport } from '@/lib/orders/pathaoSync';
 import type { CommerceOrder, OrderStatus } from '@/lib/types/commerce';
 import { ORDER_STATUSES, STATUS_LABEL, STATUS_STYLE } from '@/lib/orderStatus';
 import { KpiCard, Segmented, ErrorState } from '@/components/Finance/ui';
@@ -314,6 +316,8 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [isLoading, setIsLoading]         = useState(true);
   const [isSyncing, setIsSyncing]         = useState(false);
+  const [pathaoSyncing, setPathaoSyncing] = useState(false);
+  const [syncReport, setSyncReport]       = useState<SyncReport | null>(null);
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [counts, setCounts]               = useState<StatusCounts | null>(null);
   const [activeFilter, setActiveFilter]   = useState<FilterType>('all');
@@ -377,6 +381,27 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
   }, [page]);
 
   useEffect(() => { fetchOrders(1); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show the last background sync (it runs at most every 10 minutes when this page loads)
+  useEffect(() => {
+    fetch('/api/orders/sync-pathao').then(r => r.json()).then(j => { if (j.report) setSyncReport(j.report); }).catch(() => {});
+  }, []);
+
+  /** Pull every open order's parcel status from Pathao, write it to WooCommerce, then reload. */
+  const syncWithPathao = useCallback(async () => {
+    setPathaoSyncing(true);
+    try {
+      const res = await fetch('/api/orders/sync-pathao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || 'Pathao sync failed');
+      setSyncReport(j.report);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Pathao sync failed');
+    } finally {
+      setPathaoSyncing(false);
+    }
+    await fetchOrders(page);
+  }, [fetchOrders, page]);
 
   // Debounced server-side search across all orders, not just the current page
   useEffect(() => {
@@ -554,9 +579,10 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button type="button" className="secondary-action" style={CTRL} onClick={() => fetchOrders(page)} disabled={isSyncing} title="Reload from WooCommerce">
-            <RefreshCw size={13} style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} />
-            {isSyncing ? 'Syncing…' : 'Sync'}
+          <button type="button" className="secondary-action" style={CTRL} onClick={syncWithPathao} disabled={isSyncing || pathaoSyncing}
+            title="Update every open order's consignment and status from Pathao, then reload">
+            <RefreshCw size={13} style={{ animation: isSyncing || pathaoSyncing ? 'spin 1s linear infinite' : 'none' }} />
+            {pathaoSyncing ? 'Syncing with Pathao…' : isSyncing ? 'Loading…' : 'Sync with Pathao'}
           </button>
 
           <button type="button" className="secondary-action" style={CTRL} onClick={() => exportCSV(filteredOrders)} title="Download the orders on this page as CSV">
@@ -591,6 +617,8 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
           </button>
         </div>
       </div>
+
+      {syncReport && <PathaoSyncPanel report={syncReport} onDismiss={() => setSyncReport(null)} />}
 
       {/* ── Booking status banner ────────────────────────────────────────── */}
       {bookingState !== 'idle' && (
