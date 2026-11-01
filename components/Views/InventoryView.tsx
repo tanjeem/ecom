@@ -161,8 +161,8 @@ export const InventoryView: React.FC = () => {
             <Download size={13} /> Count sheet
           </button>
           <button type="button" onClick={() => reload(true)} disabled={loading} aria-label="Refresh from WooCommerce"
-            style={{ border: '1px solid #d9dee6', background: '#fff', borderRadius: 8, padding: '6px 9px', cursor: 'pointer', display: 'inline-flex' }}>
-            <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+            style={{ border: '1px solid #d9dee6', background: '#fff', borderRadius: 8, padding: '6px 10px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+            <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} /> Refresh
           </button>
         </div>
 

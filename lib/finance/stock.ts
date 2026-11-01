@@ -133,6 +133,7 @@ export async function getStockSnapshot(force = false): Promise<StockSnapshot> {
       deadValue: dead.reduce((s, p) => s + p.costValue, 0),
     },
   };
-  dashboardCache.set(key, snap, 15 * 60 * 1000);
+  // Short: stock also changes in WooCommerce itself (orders, edits in wp-admin)
+  dashboardCache.set(key, snap, 2 * 60 * 1000);
   return snap;
 }
