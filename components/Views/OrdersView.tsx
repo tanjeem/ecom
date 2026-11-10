@@ -581,8 +581,14 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ newOrderSignal = 0, sear
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button type="button" className="secondary-action" style={CTRL} onClick={syncWithPathao} disabled={isSyncing || pathaoSyncing}
             title="Update every open order's consignment and status from Pathao, then reload">
-            <RefreshCw size={13} style={{ animation: isSyncing || pathaoSyncing ? 'spin 1s linear infinite' : 'none' }} />
-            {pathaoSyncing ? 'Syncing with Pathao…' : isSyncing ? 'Loading…' : 'Sync with Pathao'}
+            <Truck size={13} style={{ animation: pathaoSyncing ? 'spin 1s linear infinite' : 'none' }} />
+            {pathaoSyncing ? 'Syncing with Pathao…' : 'Sync with Pathao'}
+          </button>
+
+          <button type="button" className="secondary-action" style={CTRL} onClick={() => fetchOrders(page)} disabled={isSyncing || pathaoSyncing}
+            title="Reload orders from WooCommerce (picks up edited addresses, phone numbers and statuses)">
+            <RefreshCw size={13} style={{ animation: isSyncing && !pathaoSyncing ? 'spin 1s linear infinite' : 'none' }} />
+            {isSyncing && !pathaoSyncing ? 'Refreshing…' : 'Refresh orders'}
           </button>
 
           <button type="button" className="secondary-action" style={CTRL} onClick={() => exportCSV(filteredOrders)} title="Download the orders on this page as CSV">

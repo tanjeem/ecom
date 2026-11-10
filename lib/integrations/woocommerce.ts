@@ -130,7 +130,8 @@ export function normalizeWooOrder(order: WooOrder): CommerceOrder {
       `${billing.first_name || shipping.first_name || ""} ${billing.last_name || shipping.last_name || ""}`.trim() ||
       "Customer",
     phone: billing.phone || meta.customer_phone || "",
-    address: shipping.address_1 || billing.address_1 || meta.customer_address || "",
+    // Billing first: checkout fills it and it's what gets edited in wp-admin; shipping is often a stale copy
+    address: billing.address_1 || shipping.address_1 || meta.customer_address || "",
     items:
       lineItems.map((item) => item.name).join(", ") ||
       feeLines.map((item) => item.name).join(", ") ||
@@ -144,7 +145,7 @@ export function normalizeWooOrder(order: WooOrder): CommerceOrder {
     payable: Number(meta.pathao_payable || order.total || 0),
     total: Number(order.total || 0),
     deliveryFee: Number(meta.pathao_delivery_fee || 0) || undefined,
-    city: shipping.city || billing.city || "",
+    city: billing.city || shipping.city || "",
     margin: "Pending",
     notes: order.customer_note || "Synced from WooCommerce.",
     dateCreated: order.date_created || "",
