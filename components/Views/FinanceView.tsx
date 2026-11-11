@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, ArrowLeftRight, Package, Building2, BarChart2, Repeat2, Megaphone, Shirt, RotateCcw, Settings, Wallet, Users, FileText, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, ArrowLeftRight, Package, Building2, BarChart2, Repeat2, Megaphone, Shirt, RotateCcw, Settings, Wallet, Users, FileText, ChevronDown, Truck } from 'lucide-react';
 import { FinanceOverview } from '@/components/Finance/FinanceOverview';
 import { FinanceTransactions } from '@/components/Finance/FinanceTransactions';
 import { FinanceProcurement } from '@/components/Finance/FinanceProcurement';
@@ -14,14 +14,16 @@ import { FinanceReturns } from '@/components/Finance/FinanceReturns';
 import { FinanceSettings } from '@/components/Finance/FinanceSettings';
 import { FinanceCash } from '@/components/Finance/FinanceCash';
 import { FinanceCustomers } from '@/components/Finance/FinanceCustomers';
+import { FinanceDeliveries } from '@/components/Finance/FinanceDeliveries';
 import { useAlerts } from '@/components/Finance/AlertsPanel';
 import { PeriodProvider, PeriodBar } from '@/components/Finance/period';
 
-type Tab = 'overview' | 'cash' | 'transactions' | 'procurement' | 'vendors' | 'reports' | 'products' | 'customers' | 'returns' | 'fixed-costs' | 'ads' | 'settings';
+type Tab = 'overview' | 'cash' | 'orders' | 'transactions' | 'procurement' | 'vendors' | 'reports' | 'products' | 'customers' | 'returns' | 'fixed-costs' | 'ads' | 'settings';
 
 const TABS: { id: Tab; label: string; icon: React.FC<any>; more?: boolean }[] = [
   { id: 'overview',      label: 'Overview',      icon: LayoutDashboard },
   { id: 'cash',          label: 'Cash',          icon: Wallet },
+  { id: 'orders',        label: 'Orders',        icon: Truck },
   { id: 'transactions',  label: 'Transactions',  icon: ArrowLeftRight },
   { id: 'reports',       label: 'P&L Report',    icon: BarChart2 },
   { id: 'products',      label: 'Products & Stock', icon: Shirt },
@@ -145,6 +147,7 @@ export const FinanceView: React.FC = () => {
         {/* Tab content */}
         {activeTab === 'overview'     && <FinanceOverview onOpenTab={open} />}
         {activeTab === 'cash'         && <FinanceCash onOpenTab={open} />}
+        {activeTab === 'orders'       && <FinanceDeliveries />}
         {activeTab === 'customers'    && <FinanceCustomers />}
         {activeTab === 'transactions' && <FinanceTransactions />}
         {activeTab === 'fixed-costs'  && <FinanceFixedCosts />}
