@@ -19,6 +19,7 @@ import { dashboardCache } from '@/lib/cache';
 import { getPathaoPortalOrders, type PathaoPortalOrder } from '@/lib/integrations/pathao';
 import { batchUpdateWooOrders, getWooOrdersForSync, type WooSyncOrder as WooOrder } from '@/lib/integrations/woocommerce';
 import { canMoveTo, pathaoLabel, pathaoStage, wooStatusForStage } from './pathaoStatus';
+import { rememberParcelAmounts } from './parcelAmounts';
 
 const OPEN_STATUSES = ['pending', 'processing', 'on-hold', 'packed', 'dispatched'];
 
@@ -61,6 +62,8 @@ export async function syncOrdersWithPathao({ dryRun = false, history = false } =
   ]);
 
   const forward = parcels.filter(p => !isReverse(p));
+  // Keep each parcel's booked amount before a paid return overwrites it
+  if (!dryRun) await rememberParcelAmounts(forward);
   const byConsignment = new Map(forward.map(p => [p.order_consignment_id, p]));
   // Latest parcel per merchant order id (an order can be rebooked)
   const byOrderId = new Map<string, PathaoPortalOrder>();

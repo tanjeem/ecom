@@ -601,6 +601,20 @@ export type WooSyncOrder = {
 };
 
 /** Orders in the given WooCommerce statuses (optionally created after a date), with just what the Pathao sync needs. */
+/** Order totals by order id, for the given ids (missing ids are left out). */
+export async function getWooOrderTotals(ids: number[]): Promise<Map<number, number>> {
+  const totals = new Map<number, number>();
+  const unique = [...new Set(ids.filter(n => Number.isInteger(n) && n > 0))];
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const rows = await wooFetch<{ id: number; total: string }[]>(
+      `/orders?include=${chunk.join(",")}&per_page=100&status=any&_fields=id,total`,
+    );
+    for (const r of rows) totals.set(r.id, Number(r.total) || 0);
+  }
+  return totals;
+}
+
 export async function getWooOrdersForSync(statuses: string[], after?: string): Promise<WooSyncOrder[]> {
   type Raw = { id: number; number: string; status: string; total: string; date_created: string; billing?: { phone?: string }; meta_data?: { key: string; value: unknown }[] };
   const out: WooSyncOrder[] = [];
