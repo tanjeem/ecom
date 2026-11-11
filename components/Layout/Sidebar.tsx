@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, PackageCheck, Boxes, Workflow, Coins, LogOut } from 'lucide-react';
+import { LayoutDashboard, PackageCheck, Truck, Boxes, Workflow, Coins, LogOut } from 'lucide-react';
 
 interface SidebarProps {
   activeView: string;
@@ -14,6 +14,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'orders', label: 'Orders', icon: PackageCheck },
+    { id: 'deliveries', label: 'Deliveries', icon: Truck },
     { id: 'inventory', label: 'Inventory', icon: Boxes },
     { id: 'finance', label: 'Finance', icon: Coins },
     { id: 'scale', label: 'Scale Ops', icon: Workflow },

@@ -9,13 +9,15 @@ import { OrdersView } from '@/components/Views/OrdersView';
 import { InventoryView } from '@/components/Views/InventoryView';
 import { ScaleOpsView } from '@/components/Views/ScaleOpsView';
 import { FinanceView } from '@/components/Views/FinanceView';
+import { DeliveriesView } from '@/components/Views/DeliveriesView';
 
-type ViewType = 'dashboard' | 'orders' | 'inventory' | 'finance' | 'scale';
+type ViewType = 'dashboard' | 'orders' | 'deliveries' | 'inventory' | 'finance' | 'scale';
 
 const viewTitles: Record<ViewType, string> = {
   dashboard: 'Dashboard',
   orders: 'Orders',
   inventory: 'Inventory',
+  deliveries: 'Deliveries',
   scale: 'Scale Ops',
   finance: 'Finance Center',
 };
@@ -23,6 +25,7 @@ const viewTitles: Record<ViewType, string> = {
 const viewComponents: Record<ViewType, React.ComponentType> = {
   dashboard: DashboardView,
   orders: OrdersView,
+  deliveries: DeliveriesView,
   inventory: InventoryView,
   scale: ScaleOpsView,
   finance: FinanceView,

@@ -261,10 +261,10 @@ export const FinanceDeliveries = () => {
             </div>
             {!shown.length ? <EmptyState title={parcels.length ? 'No orders match' : 'No parcels sent on Pathao in this period'} /> : (
               <div className="fin-table-scroll">
-                <table style={{ width: '100%', minWidth: 1040, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                   <colgroup>
-                    <col style={{ width: 80 }} /><col style={{ width: 138 }} /><col style={{ width: 120 }} /><col /><col style={{ width: '13%' }} />
-                    <col style={{ width: 170 }} /><col style={{ width: 108 }} /><col style={{ width: 108 }} />
+                    <col style={{ width: 80 }} /><col style={{ width: 138 }} /><col style={{ width: 150 }} /><col style={{ width: 165 }} /><col style={{ width: 125 }} />
+                    <col /><col style={{ width: 120 }} /><col style={{ width: 120 }} />
                   </colgroup>
                   <thead>
                     <tr>
