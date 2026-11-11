@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPathaoPortalOrders, type PathaoPortalOrder } from '@/lib/integrations/pathao';
+import { getPathaoBookedAmount, getPathaoPortalOrders, type PathaoPortalOrder } from '@/lib/integrations/pathao';
 import { getWooOrderTotals } from '@/lib/integrations/woocommerce';
 import { pathaoLabel, pathaoStage } from '@/lib/orders/pathaoStatus';
 import { amountReplaced, getParcelAmounts, rememberParcelAmounts, saveParcelAmounts } from '@/lib/orders/parcelAmounts';
@@ -65,8 +65,22 @@ export async function GET(req: NextRequest) {
     const booked = await getParcelAmounts(raw.map(p => p.order_consignment_id));
 
     // Paid returns and partial deliveries seen for the first time no longer carry the
-    // booked amount: use the order total from WooCommerce (the amount we book with)
-    const unknown = raw.filter(p => !booked.has(p.order_consignment_id) && orderId(p) && amountReplaced(p.order_status || ''));
+    // booked amount in Pathao's list: read it from the parcel's own Pathao record, then
+    // fall back to the WooCommerce order total (the amount we book with)
+    let unknown = raw.filter(p => !booked.has(p.order_consignment_id) && amountReplaced(p.order_status || ''));
+    if (unknown.length) {
+      const found: { consignment_id: string; amount: number; merchant_order_id: string | null; source: string }[] = [];
+      for (let i = 0; i < unknown.length; i += 4) {
+        const amounts = await Promise.all(unknown.slice(i, i + 4).map(p => getPathaoBookedAmount(p.order_consignment_id)));
+        amounts.forEach((a, j) => {
+          const p = unknown[i + j];
+          if (a != null) found.push({ consignment_id: p.order_consignment_id, amount: a, merchant_order_id: String(p.merchant_order_id || '') || null, source: 'pathao-order' });
+        });
+      }
+      for (const f of found) booked.set(f.consignment_id, f.amount);
+      await saveParcelAmounts(found);
+      unknown = unknown.filter(p => !booked.has(p.order_consignment_id) && orderId(p));
+    }
     if (unknown.length) {
       const totals = await Promise.race([
         getWooOrderTotals(unknown.map(orderId)),

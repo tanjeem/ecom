@@ -263,8 +263,8 @@ export const FinanceDeliveries = () => {
               <div className="fin-table-scroll">
                 <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                   <colgroup>
-                    <col style={{ width: 80 }} /><col style={{ width: 138 }} /><col style={{ width: 150 }} /><col style={{ width: 165 }} /><col style={{ width: 125 }} />
-                    <col /><col style={{ width: 120 }} /><col style={{ width: 120 }} />
+                    <col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '17%' }} />
+                    <col style={{ width: '14%' }} /><col style={{ width: '15%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} />
                   </colgroup>
                   <thead>
                     <tr>

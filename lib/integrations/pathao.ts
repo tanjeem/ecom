@@ -397,6 +397,27 @@ const GAP_CACHE_TTL = 6 * 60 * 60 * 1000; // historical window — rarely change
 let _allOrdersInflight: Promise<PathaoPortalOrder[]> | null = null;
 const PARTIAL_CACHE_TTL = 30 * 1000; // retry soon when Pathao rate-limited us
 
+/**
+ * The amount a parcel was booked to collect, from its own order record. Pathao's
+ * order list replaces it with the return charge on a paid return; this record keeps
+ * the original. Null if Pathao doesn't answer.
+ */
+export async function getPathaoBookedAmount(consignmentId: string): Promise<number | null> {
+  try {
+    const token = await getMerchantPortalToken();
+    const res = await fetch(`https://merchant.pathao.com/api/v1/orders/${encodeURIComponent(consignmentId)}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as { data?: { order_amount?: number | string } };
+    const amount = Number(json.data?.order_amount);
+    return Number.isFinite(amount) && amount > 0 ? amount : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getPathaoPortalOrders(
   fromDate?: string,
   toDate?: string,
