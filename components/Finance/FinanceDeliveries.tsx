@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Truck, CheckCircle2, RotateCcw, Clock, Search, RefreshCw, Wallet, X, CalendarDays } from 'lucide-react';
+import { Truck, CheckCircle2, RotateCcw, Clock, Search, RefreshCw, Wallet, X } from 'lucide-react';
+import { DateRangePicker } from './DateRangePicker';
 import { Card, KpiCard, LoadingState, ErrorState, EmptyState } from './ui';
 import { fmt, inputStyle } from './shared';
 import { useApi, th, td, num } from './useApi';
@@ -113,14 +114,13 @@ export const FinanceDeliveries = () => {
   } as const);
   const isDay = (d: string) => mode.kind === 'day' && mode.date === d;
   const isLast = (n: number) => mode.kind === 'last' && mode.days === n;
-  const dateInput = { border: 'none', outline: 'none', padding: '7px 10px', fontSize: '0.8rem', fontWeight: 600, color: '#0f172a', background: 'transparent', fontFamily: 'inherit' } as const;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* period picker */}
       <Card padding="12px 14px">
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          {[0, 1, 2, 3, 4].map(n => {
+          {[0, 1, 2, 3, 4, 5, 6].map(n => {
             const d = addDays(today, -n);
             const on = isDay(d);
             return (
@@ -137,25 +137,19 @@ export const FinanceDeliveries = () => {
           ))}
           <button type="button" onClick={() => pick({ kind: 'range', from: `${today.slice(0, 7)}-01`, to: today })}
             style={{ ...chip(mode.kind === 'range' && mode.from === `${today.slice(0, 7)}-01` && mode.to === today), padding: '12px 13px' }}>This month</button>
-          <span style={{ flex: 1 }} />
-          <button type="button" onClick={() => reload(true)} disabled={loading} title="Fetch the latest from Pathao"
-            style={{ ...chip(false), display: 'inline-flex', gap: 6, alignItems: 'center', padding: '12px 13px' }}>
-            <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} /> {loading ? 'Fetching…' : 'Fetch from Pathao'}
-          </button>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #e2e7ee', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 10px', color: '#64748b', fontSize: '0.74rem', fontWeight: 700, borderRight: '1px solid #e2e7ee', alignSelf: 'stretch', background: '#f8fafc' }}>
-              <CalendarDays size={14} /> Dates
-            </span>
-            <input type="date" aria-label="From" value={from} max={to} onChange={e => e.target.value && pick({ kind: 'range', from: e.target.value, to })} style={dateInput} />
-            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>→</span>
-            <input type="date" aria-label="To" value={to} min={from} max={today} onChange={e => e.target.value && pick({ kind: 'range', from, to: e.target.value })} style={dateInput} />
-          </div>
+          <DateRangePicker from={from} to={to} max={today}
+            onChange={(f, t) => pick(f === t ? { kind: 'day', date: f } : { kind: 'range', from: f, to: t })} />
           <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
             Showing <b style={{ color: '#0f172a' }}>{from === to ? FULL_DATE.format(new Date(`${from}T00:00:00`)) : `${dayLabel(from)} – ${dayLabel(to)}`}</b>
             {from !== to && ` · ${spanDays} days`}
           </span>
+          <span style={{ flex: 1 }} />
+          <button type="button" onClick={() => reload(true)} disabled={loading} title="Fetch the latest from Pathao"
+            style={{ ...chip(false), display: 'inline-flex', gap: 6, alignItems: 'center', padding: '8px 13px' }}>
+            <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} /> {loading ? 'Fetching…' : 'Fetch from Pathao'}
+          </button>
         </div>
       </Card>
 
