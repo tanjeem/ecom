@@ -1305,6 +1305,10 @@ tbody tr:hover {
     white-space: nowrap;
   }
   .nav-item span { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  /* Seven sections don't fit a narrow phone: let the tabs scroll sideways rather than squash */
+  .nav-stack { overflow-x: auto; scrollbar-width: none; }
+  .nav-stack::-webkit-scrollbar { display: none; }
+  .nav-stack .nav-item { flex: 1 0 58px; }
   .nav-signout { flex: 0 0 56px; }
   .nav-extra { display: none; }
   /* Room for the tab bar so the last card isn't hidden behind it */
@@ -1321,4 +1325,59 @@ tbody tr:hover {
 @media (max-width: 640px) {
   .inv-sale-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .inv-sale-facts { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Products page: shop order + editor */
+.prod-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #e8edf3;
+  border-radius: 10px;
+  background: #fff;
+  cursor: grab;
+  transition: box-shadow 0.12s, border-color 0.12s;
+}
+.prod-row:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05); }
+.prod-row.is-dragging, .prod-card.is-dragging { opacity: 0.35 !important; }
+.prod-row.is-over, .prod-card.is-over { border-color: #0f172a; box-shadow: 0 0 0 2px #0f172a; }
+.prod-sizes { flex: 0 1 260px; min-width: 0; }
+.prod-price { flex: 0 0 110px; text-align: right; }
+.prod-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+.prod-actions button:disabled { opacity: 0.35; cursor: default; }
+.prod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.prod-card {
+  border: 1px solid #e8edf3;
+  border-radius: 10px;
+  padding: 6px;
+  background: #fff;
+  cursor: grab;
+}
+.prod-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  justify-content: flex-end;
+}
+.prod-editor {
+  width: min(560px, 100vw);
+  height: 100%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -12px 0 40px rgba(15, 23, 42, 0.18);
+}
+@media (max-width: 900px) {
+  .prod-row { flex-wrap: wrap; cursor: default; }
+  .prod-grip { display: none; }
+  .prod-sizes { flex: 1 1 100%; order: 5; }
+  .prod-price { flex: 1 1 auto; text-align: left; order: 6; }
+  .prod-actions { order: 7; }
 }

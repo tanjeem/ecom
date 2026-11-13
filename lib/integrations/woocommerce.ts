@@ -664,3 +664,122 @@ export async function batchUpdateWooOrders(updates: { id: number; status?: strin
   }
   return { updated, failed };
 }
+
+// ─── catalog: store order, prices and stock per size ─────────────────────────
+
+export type CatalogVariant = {
+  id: number;
+  size: string;
+  sku: string;
+  regularPrice: string;
+  salePrice: string;
+  stock: number;
+};
+
+export type CatalogProduct = {
+  id: number;
+  name: string;
+  type: string;
+  menuOrder: number;
+  image: string | null;
+  link: string;
+  categories: string[];
+  /** a sold-out product is hidden from the shop (WooCommerce "hide out of stock" is on) */
+  inStock: boolean;
+  /** simple products carry their price and stock themselves; variable ones only on their variants */
+  regularPrice: string;
+  salePrice: string;
+  stock: number;
+  variants: CatalogVariant[];
+};
+
+/** Every published product in the order the shop shows them (menu order, then name), with each size's prices and stock. */
+export async function getWooCatalog(): Promise<CatalogProduct[]> {
+  type P = {
+    id: number; name: string; type: string; menu_order: number; permalink: string; regular_price: string; sale_price: string;
+    stock_quantity: number | null; stock_status: string; images?: { src: string }[]; categories?: { name: string }[]; variations: number[];
+  };
+  type V = { id: number; sku: string; regular_price: string; sale_price: string; stock_quantity: number | null; attributes: { option: string }[] };
+  const products: P[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const rows = await wooFetch<P[]>(`/products?per_page=100&page=${page}&status=publish&_fields=id,name,type,menu_order,permalink,regular_price,sale_price,stock_quantity,stock_status,images,categories,variations`);
+    products.push(...rows);
+    if (rows.length < 100) break;
+  }
+  const out = await Promise.all(products.map(async (p): Promise<CatalogProduct> => {
+    const vs = p.type === "variable" && p.variations.length
+      ? await wooFetch<V[]>(`/products/${p.id}/variations?per_page=100&_fields=id,sku,regular_price,sale_price,stock_quantity,attributes`)
+      : [];
+    return {
+      id: p.id,
+      name: p.name,
+      type: p.type,
+      menuOrder: p.menu_order,
+      image: p.images?.[0]?.src || null,
+      link: p.permalink,
+      categories: (p.categories || []).map((c) => c.name),
+      inStock: p.stock_status !== "outofstock",
+      regularPrice: p.regular_price || "",
+      salePrice: p.sale_price || "",
+      stock: p.stock_quantity ?? 0,
+      variants: vs.map((v) => ({
+        id: v.id,
+        size: v.attributes.map((a) => a.option).join(" / ") || "—",
+        sku: v.sku || "",
+        regularPrice: v.regular_price || "",
+        salePrice: v.sale_price || "",
+        stock: v.stock_quantity ?? 0,
+      })),
+    };
+  }));
+  return out.sort((a, b) => a.menuOrder - b.menuOrder || a.name.localeCompare(b.name));
+}
+
+/** Set the menu order (shop position) of many products at once. */
+export async function setWooMenuOrder(updates: { id: number; menuOrder: number }[]): Promise<number> {
+  let saved = 0;
+  for (let i = 0; i < updates.length; i += 100) {
+    const res = await wooFetch<{ update?: { id: number; error?: { message: string } }[] }>("/products/batch", {
+      method: "POST",
+      body: JSON.stringify({ update: updates.slice(i, i + 100).map((u) => ({ id: u.id, menu_order: u.menuOrder })) }),
+    });
+    const failed = (res.update || []).filter((r) => r.error);
+    if (failed.length) throw new Error(`WooCommerce refused ${failed.length} product(s): ${failed[0].error!.message}`);
+    saved += (res.update || []).length;
+  }
+  return saved;
+}
+
+export type CatalogChange = { variationId: number | null; regularPrice?: string; salePrice?: string; stock?: number };
+
+/** Live stock of a product, or of each of its variations (by variation id). */
+export async function getWooStockById(productId: number): Promise<Map<number | null, number>> {
+  const map = new Map<number | null, number>();
+  const p = await wooFetch<{ type: string; stock_quantity: number | null }>(`/products/${productId}?_fields=type,stock_quantity`);
+  map.set(null, p.stock_quantity ?? 0);
+  if (p.type === "variable") {
+    const vs = await wooFetch<{ id: number; stock_quantity: number | null }[]>(`/products/${productId}/variations?per_page=100&_fields=id,stock_quantity`);
+    for (const v of vs) map.set(v.id, v.stock_quantity ?? 0);
+  }
+  return map;
+}
+
+/** Save price and stock changes for a product (variationId null) and/or its sizes. Only the fields given are touched. */
+export async function saveWooCatalogChanges(productId: number, changes: CatalogChange[]): Promise<void> {
+  const body = (c: CatalogChange) => ({
+    ...(c.regularPrice !== undefined ? { regular_price: c.regularPrice } : {}),
+    ...(c.salePrice !== undefined ? { sale_price: c.salePrice } : {}),
+    ...(c.stock !== undefined ? { manage_stock: true, stock_quantity: c.stock } : {}),
+  });
+  const own = changes.find((c) => c.variationId == null);
+  if (own) await wooFetch(`/products/${productId}`, { method: "PUT", body: JSON.stringify(body(own)) });
+  const sizes = changes.filter((c) => c.variationId != null);
+  if (sizes.length) {
+    const res = await wooFetch<{ update?: { id: number; error?: { message: string } }[] }>(`/products/${productId}/variations/batch`, {
+      method: "POST",
+      body: JSON.stringify({ update: sizes.map((c) => ({ id: c.variationId, ...body(c) })) }),
+    });
+    const failed = (res.update || []).filter((r) => r.error);
+    if (failed.length) throw new Error(`WooCommerce refused ${failed.length} size(s): ${failed[0].error!.message}`);
+  }
+}
