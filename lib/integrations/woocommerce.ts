@@ -684,6 +684,10 @@ export type CatalogProduct = {
   image: string | null;
   link: string;
   categories: string[];
+  categoryIds: number[];
+  description: string;
+  /** the size chart lives here on this store */
+  shortDescription: string;
   /** a sold-out product is hidden from the shop (WooCommerce "hide out of stock" is on) */
   inStock: boolean;
   /** simple products carry their price and stock themselves; variable ones only on their variants */
@@ -697,12 +701,13 @@ export type CatalogProduct = {
 export async function getWooCatalog(): Promise<CatalogProduct[]> {
   type P = {
     id: number; name: string; type: string; menu_order: number; permalink: string; regular_price: string; sale_price: string;
-    stock_quantity: number | null; stock_status: string; images?: { src: string }[]; categories?: { name: string }[]; variations: number[];
+    stock_quantity: number | null; stock_status: string; images?: { src: string }[]; categories?: { id: number; name: string }[]; variations: number[];
+    description: string; short_description: string;
   };
   type V = { id: number; sku: string; regular_price: string; sale_price: string; stock_quantity: number | null; attributes: { option: string }[] };
   const products: P[] = [];
   for (let page = 1; page <= 10; page++) {
-    const rows = await wooFetch<P[]>(`/products?per_page=100&page=${page}&status=publish&_fields=id,name,type,menu_order,permalink,regular_price,sale_price,stock_quantity,stock_status,images,categories,variations`);
+    const rows = await wooFetch<P[]>(`/products?per_page=100&page=${page}&status=publish&_fields=id,name,type,menu_order,permalink,regular_price,sale_price,stock_quantity,stock_status,images,categories,variations,description,short_description`);
     products.push(...rows);
     if (rows.length < 100) break;
   }
@@ -718,6 +723,9 @@ export async function getWooCatalog(): Promise<CatalogProduct[]> {
       image: p.images?.[0]?.src || null,
       link: p.permalink,
       categories: (p.categories || []).map((c) => c.name),
+      categoryIds: (p.categories || []).map((c) => c.id),
+      description: p.description || "",
+      shortDescription: p.short_description || "",
       inStock: p.stock_status !== "outofstock",
       regularPrice: p.regular_price || "",
       salePrice: p.sale_price || "",
@@ -782,4 +790,77 @@ export async function saveWooCatalogChanges(productId: number, changes: CatalogC
     const failed = (res.update || []).filter((r) => r.error);
     if (failed.length) throw new Error(`WooCommerce refused ${failed.length} size(s): ${failed[0].error!.message}`);
   }
+}
+
+export type NewProductInput = {
+  name: string;
+  status: "publish" | "draft";
+  categoryIds: number[];
+  description: string;
+  shortDescription: string;
+  imageUrls: string[];
+  menuOrder: number;
+  /** empty = a simple product with one price and stock */
+  sizes: { size: string; regularPrice: string; salePrice: string; stock: number; description: string }[];
+  simple?: { regularPrice: string; salePrice: string; stock: number };
+};
+
+export const wooCategories = () => wooFetch<{ id: number; name: string; count: number }[]>("/products/categories?per_page=100&_fields=id,name,count");
+
+/**
+ * Create a product the way this store sets them up: a variable product with a
+ * local "size" option, stock tracked per size, SKUs `<slug>` and `<slug>-<size>`.
+ * WordPress copies each image URL into its Media Library. If the sizes can't be
+ * created the product is moved to draft so a half-made product never shows.
+ */
+export async function createWooProduct(input: NewProductInput): Promise<{ id: number; link: string; warning?: string }> {
+  const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const base = {
+    name: input.name,
+    status: input.status,
+    menu_order: input.menuOrder,
+    categories: input.categoryIds.map((id) => ({ id })),
+    description: input.description,
+    short_description: input.shortDescription,
+    images: input.imageUrls.map((src) => ({ src })),
+  };
+  const body = input.sizes.length
+    ? { ...base, type: "variable", attributes: [{ name: "size", visible: false, variation: true, options: input.sizes.map((s) => s.size) }] }
+    : {
+        ...base, type: "simple", manage_stock: true, stock_quantity: input.simple?.stock ?? 0,
+        regular_price: input.simple?.regularPrice ?? "", sale_price: input.simple?.salePrice ?? "",
+      };
+
+  type Created = { id: number; permalink: string; sku: string };
+  let product: Created;
+  try {
+    product = await wooFetch<Created>("/products", { method: "POST", body: JSON.stringify({ ...body, sku: slug }) });
+  } catch (e) {
+    // Another product (maybe an old draft) already uses that SKU: create without one
+    if (!/sku/i.test(e instanceof Error ? e.message : "")) throw e;
+    product = await wooFetch<Created>("/products", { method: "POST", body: JSON.stringify(body) });
+  }
+  if (!input.sizes.length) return { id: product.id, link: product.permalink };
+
+  const sku = product.sku || "";
+  const res = await wooFetch<{ create?: { id: number; error?: { message: string } }[] }>(`/products/${product.id}/variations/batch`, {
+    method: "POST",
+    body: JSON.stringify({
+      create: input.sizes.map((s) => ({
+        attributes: [{ name: "size", option: s.size }],
+        regular_price: s.regularPrice,
+        sale_price: s.salePrice,
+        manage_stock: true,
+        stock_quantity: s.stock,
+        description: s.description,
+        ...(sku ? { sku: `${sku}-${s.size.toLowerCase().replace(/[^a-z0-9]+/g, "")}` } : {}),
+      })),
+    }),
+  }).catch((e) => ({ create: [{ id: 0, error: { message: e instanceof Error ? e.message : String(e) } }] }));
+  const failed = (res.create || []).filter((r) => r.error);
+  if (failed.length) {
+    await wooFetch(`/products/${product.id}`, { method: "PUT", body: JSON.stringify({ status: "draft" }) }).catch(() => {});
+    return { id: product.id, link: product.permalink, warning: `${failed.length} size(s) couldn’t be created (${failed[0].error!.message}), so it was saved as a draft. Fix it in WooCommerce.` };
+  }
+  return { id: product.id, link: product.permalink };
 }

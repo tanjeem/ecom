@@ -2,18 +2,20 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  GripVertical, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Search, RefreshCw, Save, Undo2, ExternalLink, Pencil, X, LayoutGrid, List, Minus, Plus,
+  GripVertical, PackagePlus, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Search, RefreshCw, Save, Undo2, ExternalLink, Pencil, X, LayoutGrid, List, Minus, Plus,
 } from 'lucide-react';
 import { Card, LoadingState, ErrorState, useToasts, ToastStack, Spinner } from '@/components/Finance/ui';
 import { fmt } from '@/components/Finance/shared';
 import { useApi } from '@/components/Finance/useApi';
+import { AddProduct } from '@/components/Products/AddProduct';
 
 type Variant = { id: number; size: string; sku: string; regularPrice: string; salePrice: string; stock: number };
 type Product = {
   id: number; name: string; type: string; menuOrder: number; image: string | null; link: string; categories: string[];
+  categoryIds: number[]; description: string; shortDescription: string;
   inStock: boolean; regularPrice: string; salePrice: string; stock: number; variants: Variant[];
 };
-type Data = { fetchedAt: string; products: Product[] };
+type Data = { fetchedAt: string; products: Product[]; categories: { id: number; name: string; count: number }[] };
 
 const SIZE_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL'];
 const sizeRank = (s: string) => { const i = SIZE_ORDER.indexOf(s.toUpperCase()); return i < 0 ? 99 : i; };
@@ -70,6 +72,7 @@ export const ProductsView: React.FC = () => {
   const [overId, setOverId] = useState<number | null>(null);
   const [editId, setEditId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const byId = useMemo(() => new Map((data?.products || []).map(p => [p.id, p])), [data]);
   const dirty = order.length > 0 && order.join() !== saved.join();
@@ -167,6 +170,9 @@ export const ProductsView: React.FC = () => {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button type="button" onClick={() => setAdding(true)} style={{ ...btn, padding: '7px 14px', borderColor: '#0f172a' }}>
+              <PackagePlus size={14} /> Add product
+            </button>
             {dirty && (
               <button type="button" style={btn} onClick={() => setOrder(saved)} disabled={saving}><Undo2 size={13} /> Undo</button>
             )}
@@ -284,6 +290,12 @@ export const ProductsView: React.FC = () => {
         <ProductEditor key={editing.id} product={editing} onClose={() => setEditId(null)}
           onSaved={msg => { push({ text: msg }); setEditId(null); reload(); }}
           onError={msg => push({ text: msg, tone: 'error' }, 9000)} />
+      )}
+      {adding && (
+        <AddProduct categories={data?.categories || []} onClose={() => setAdding(false)}
+          templates={products.map(p => ({ id: p.id, name: p.name, categoryIds: p.categoryIds, description: p.description, shortDescription: p.shortDescription,
+            regularPrice: p.regularPrice, salePrice: p.salePrice, variants: p.variants.map(v => ({ size: v.size, regularPrice: v.regularPrice, salePrice: v.salePrice })) }))}
+          onCreated={(msg, link) => { setAdding(false); push({ text: msg, action: { label: 'View', run: () => window.open(link, '_blank') } }, 10000); reload(); }} />
       )}
       <ToastStack toasts={toasts} dismiss={dismiss} />
     </section>
