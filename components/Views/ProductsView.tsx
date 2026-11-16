@@ -3,7 +3,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   GripVertical, PackagePlus, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Search, RefreshCw, Save, Undo2, ExternalLink, Pencil, X, LayoutGrid, List, Minus, Plus,
+  TrendingUp, Eye, ShoppingBag, Percent,
 } from 'lucide-react';
+import { rankIds, shopConversion, PRIOR_VIEWS, type ProductStat, type SortMode } from '@/lib/catalogRanking';
 import { Card, LoadingState, ErrorState, useToasts, ToastStack, Spinner } from '@/components/Finance/ui';
 import { fmt } from '@/components/Finance/shared';
 import { useApi } from '@/components/Finance/useApi';
@@ -16,6 +18,19 @@ type Product = {
   inStock: boolean; regularPrice: string; salePrice: string; stock: number; variants: Variant[];
 };
 type Data = { fetchedAt: string; products: Product[]; categories: { id: number; name: string; count: number }[] };
+type Perf = {
+  days: number; from: string; to: string; fetchedAt: string; orders: number;
+  views: { ok: boolean; connected?: boolean; error?: string | null };
+  products: ({ id: number } & ProductStat)[];
+};
+const PERIODS = [7, 30, 90] as const;
+const SORTS: { id: SortMode; label: string; icon: React.FC<any>; needsViews: boolean; hint: string }[] = [
+  { id: 'conversion', label: 'Best converting', icon: Percent, needsViews: true, hint: 'Orders per 100 views. Products with few views are judged cautiously.' },
+  { id: 'views', label: 'Most viewed', icon: Eye, needsViews: true, hint: 'Page views. Products near the top get more views just for being there.' },
+  { id: 'orders', label: 'Most ordered', icon: ShoppingBag, needsViews: false, hint: 'Website orders in the period.' },
+];
+const pct = (x: number) => `${(x * 100).toFixed(x >= 0.1 ? 0 : 1)}%`;
+const shortDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 const SIZE_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL'];
 const sizeRank = (s: string) => { const i = SIZE_ORDER.indexOf(s.toUpperCase()); return i < 0 ? 99 : i; };
@@ -73,6 +88,12 @@ export const ProductsView: React.FC = () => {
   const [editId, setEditId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [days, setDays] = useState<number>(30);
+  const [sortedBy, setSortedBy] = useState<SortMode | null>(null);
+  const perfApi = useApi<Perf>(`/api/catalog/performance?days=${days}`);
+  const perf = perfApi.data?.days === days ? perfApi.data : null;
+  const stats = useMemo(() => new Map((perf?.products || []).map(p => [p.id, p as ProductStat])), [perf]);
+  const viewsOk = !!perf?.views.ok;
 
   const byId = useMemo(() => new Map((data?.products || []).map(p => [p.id, p])), [data]);
   const dirty = order.length > 0 && order.join() !== saved.join();
@@ -122,6 +143,21 @@ export const ProductsView: React.FC = () => {
   };
   const moveTo = (id: number, position: number) => setOrder(move(order, order.indexOf(id), position - 1));
 
+  /** Rank what's on screen by a measure; with a filter on, they re-sort among their own slots. */
+  const sortBy = (mode: SortMode) => {
+    const next = rankIds(visible, stats, mode, id => !!byId.get(id)?.inStock);
+    let k = 0;
+    const set = new Set(visible);
+    const newOrder = order.map(id => (set.has(id) ? next[k++] : id));
+    const movedN = newOrder.filter((id, i) => order[i] !== id).length;
+    setOrder(newOrder);
+    setSortedBy(mode);
+    const label = SORTS.find(s => s.id === mode)!.label.toLowerCase();
+    push({ text: movedN
+      ? `Sorted ${visible.length} products by ${label} (last ${days} days). Drag any product to adjust, then press Save order to shop.`
+      : `Already in ${label} order.` }, 7000);
+  };
+
   const drop = (targetId: number) => {
     if (dragId == null || dragId === targetId) return;
     reorderVisible(visible.indexOf(dragId), visible.indexOf(targetId));
@@ -157,6 +193,8 @@ export const ProductsView: React.FC = () => {
   const hidden = products.filter(p => !p.inStock).length;
   const editing = editId != null ? byId.get(editId) : undefined;
   const changedCount = order.filter((id, i) => saved[i] !== id).length;
+  const avgConv = shopConversion(stats);
+  const totalViews = (perf?.products || []).filter(p => byId.has(p.id)).reduce((t, p) => t + p.views, 0);
 
   return (
     <section className="view" id="products-view" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -174,7 +212,7 @@ export const ProductsView: React.FC = () => {
               <PackagePlus size={14} /> Add product
             </button>
             {dirty && (
-              <button type="button" style={btn} onClick={() => setOrder(saved)} disabled={saving}><Undo2 size={13} /> Undo</button>
+              <button type="button" style={btn} onClick={() => { setOrder(saved); setSortedBy(null); }} disabled={saving}><Undo2 size={13} /> Undo</button>
             )}
             <button type="button" onClick={saveOrder} disabled={!dirty || saving}
               style={{ ...btn, background: dirty ? '#0f172a' : '#f1f5f9', color: dirty ? '#fff' : '#94a3b8', borderColor: dirty ? '#0f172a' : '#e2e7ee', cursor: dirty ? 'pointer' : 'default', padding: '7px 14px' }}>
@@ -182,6 +220,53 @@ export const ProductsView: React.FC = () => {
             </button>
           </div>
         </div>
+      </Card>
+
+      <Card padding="14px 16px">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+            <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a', display: 'flex', gap: 6, alignItems: 'center' }}><TrendingUp size={15} /> Sort by performance</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 3 }}>
+              {perfApi.loading && !perf ? 'Loading views and orders…'
+                : perfApi.error && !perf ? <span style={{ color: '#b91c1c' }}>{perfApi.error}</span>
+                : perf ? <>
+                    {shortDay(perf.from)} – {shortDay(perf.to)}:{' '}
+                    {viewsOk && <><b>{totalViews.toLocaleString()}</b> product page views, </>}
+                    <b>{perf.orders.toLocaleString()}</b> website orders
+                    {viewsOk && totalViews > 0 && <> (on average <b>{pct(avgConv)}</b> of a product’s views turn into orders)</>}.
+                    {' '}Sorting only rearranges this list. Adjust by dragging, then save.
+                  </> : null}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div role="group" aria-label="Period" style={{ display: 'inline-flex', border: '1px solid #d9dee6', borderRadius: 8, overflow: 'hidden' }}>
+              {PERIODS.map(d => (
+                <button key={d} type="button" onClick={() => setDays(d)} aria-pressed={days === d}
+                  style={{ border: 'none', padding: '6px 10px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                    background: days === d ? '#0f172a' : '#fff', color: days === d ? '#fff' : '#334155' }}>
+                  {d} days
+                </button>
+              ))}
+            </div>
+            {SORTS.map(({ id, label, icon: Icon, needsViews, hint }) => {
+              const off = !perf || (needsViews && !viewsOk);
+              return (
+                <button key={id} type="button" onClick={() => sortBy(id)} disabled={off} title={off && needsViews && perf ? 'Needs Jetpack views (see below)' : hint}
+                  style={{ ...btn, opacity: off ? 0.45 : 1, cursor: off ? 'default' : 'pointer',
+                    ...(sortedBy === id ? { background: '#eef2ff', borderColor: '#6366f1', color: '#3730a3' } : {}) }}>
+                  <Icon size={13} /> {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {perf && !viewsOk && (
+          <div style={{ marginTop: 10, fontSize: '0.74rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', lineHeight: 1.5 }}>
+            {perf.views.connected
+              ? <>Couldn’t read views from Jetpack: {perf.views.error}</>
+              : <>Product views come from Jetpack Stats on your WordPress site. To connect them: WordPress admin → Users → Profile → <b>Application Passwords</b> → name it “Shop admin” → Add, then send me the password and your WordPress username. Sorting by orders works now.</>}
+          </div>
+        )}
       </Card>
 
       <Card padding="14px 16px">
@@ -242,6 +327,7 @@ export const ProductsView: React.FC = () => {
                       {!p.inStock && <span style={{ fontWeight: 800, color: '#b91c1c', background: '#fee2e2', borderRadius: 99, padding: '1px 7px' }}>Sold out · hidden on shop</span>}
                     </div>
                   </div>
+                  {perf && <div className="prod-stats"><StatLine s={stats.get(id)} viewsOk={viewsOk} avg={avgConv} /></div>}
                   <div className="prod-sizes"><SizeChips p={p} /></div>
                   <div className="prod-price">
                     <div style={{ fontWeight: 800, fontSize: '0.84rem', color: '#0f172a' }}>{price.now}</div>
@@ -277,6 +363,7 @@ export const ProductsView: React.FC = () => {
                     <div style={{ fontSize: '0.78rem', marginTop: 4 }}>
                       <b>{price.now}</b> {price.was && <s style={{ color: '#94a3b8', fontSize: '0.7rem' }}>{price.was}</s>}
                     </div>
+                    {perf && <div style={{ marginTop: 4 }}><StatLine s={stats.get(id)} viewsOk={viewsOk} avg={avgConv} compact /></div>}
                     <button type="button" onClick={() => setEditId(id)} style={{ ...btn, marginTop: 6, width: '100%', justifyContent: 'center', padding: '4px 8px' }}><Pencil size={12} /> Edit</button>
                   </div>
                 </div>
@@ -308,6 +395,26 @@ const Thumb = ({ src, size }: { src: string | null; size: number | string }) => 
     {src && <img src={src} alt="" draggable={false} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
   </div>
 );
+
+/** "1,240 views · 18 orders · 1.5%" for a product over the chosen period. */
+const StatLine = ({ s, viewsOk, avg, compact }: { s: ProductStat | undefined; viewsOk: boolean; avg: number; compact?: boolean }) => {
+  const views = s?.views || 0;
+  const orders = s?.orders || 0;
+  const conv = views ? orders / views : 0;
+  const few = viewsOk && views < PRIOR_VIEWS / 3;
+  const tone = !viewsOk || few || !avg ? '#334155' : conv >= avg * 1.25 ? '#15803d' : conv <= avg * 0.6 ? '#b91c1c' : '#334155';
+  return (
+    <div style={{ fontSize: compact ? '0.68rem' : '0.72rem', color: '#64748b', display: 'flex', gap: compact ? 6 : 8, flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
+      {viewsOk && <span title="Product page views"><b style={{ color: '#0f172a' }}>{views.toLocaleString()}</b> views</span>}
+      <span title="Website orders that included this product"><b style={{ color: '#0f172a' }}>{orders}</b> order{orders === 1 ? '' : 's'}</span>
+      {viewsOk && views > 0 && (
+        <span title={few ? 'Too few views to judge yet' : 'Orders ÷ views'} style={{ fontWeight: 800, color: tone }}>
+          {pct(conv)}{few ? ' · few views' : ''}
+        </span>
+      )}
+    </div>
+  );
+};
 
 const SizeChips = ({ p }: { p: Product }) => (
   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>

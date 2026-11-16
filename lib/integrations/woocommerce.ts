@@ -581,6 +581,40 @@ export async function getWooUnitsSold(after: string): Promise<{ productId: numbe
   return out;
 }
 
+export type ProductSales = { orders: number; units: number; revenue: number };
+
+/**
+ * Website orders per product placed since `after` (YYYY-MM-DD): orders that came
+ * through the shop's checkout, cancelled / failed / refunded left out. Used to
+ * work out each product page's conversion rate.
+ */
+export async function getWooProductSales(after: string): Promise<{ byProduct: Map<number, ProductSales>; orders: number }> {
+  type O = { id: number; created_via: string; line_items: { product_id: number; quantity: number; total: string }[] };
+  const out = new Map<number, ProductSales & { ids: Set<number> }>();
+  let orders = 0;
+  for (let page = 1; page <= 50; page++) {
+    const params = new URLSearchParams({
+      after: `${after}T00:00:00`, per_page: "100", page: String(page),
+      status: "processing,on-hold,completed,packed,dispatched,pending",
+      _fields: "id,created_via,line_items",
+    });
+    const rows = await wooFetch<O[]>(`/orders?${params}`);
+    for (const o of rows) {
+      if (o.created_via && !["checkout", "store-api"].includes(o.created_via)) continue;
+      orders++;
+      for (const li of o.line_items || []) {
+        const s = out.get(li.product_id) || { orders: 0, units: 0, revenue: 0, ids: new Set<number>() };
+        if (!s.ids.has(o.id)) { s.ids.add(o.id); s.orders++; }
+        s.units += Number(li.quantity) || 0;
+        s.revenue += Number(li.total) || 0;
+        out.set(li.product_id, s);
+      }
+    }
+    if (rows.length < 100) break;
+  }
+  return { byProduct: new Map([...out].map(([id, s]) => [id, { orders: s.orders, units: s.units, revenue: s.revenue }])), orders };
+}
+
 /** Current stock count of a product or one of its variations, straight from WooCommerce. */
 export async function getWooStock(productId: number, variationId: number | null): Promise<number> {
   const path = variationId ? `/products/${productId}/variations/${variationId}` : `/products/${productId}`;
