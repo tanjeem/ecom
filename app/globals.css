@@ -1343,7 +1343,7 @@ tbody tr:hover {
 .prod-row.is-dragging, .prod-card.is-dragging { opacity: 0.35 !important; }
 .prod-row.is-over, .prod-card.is-over { border-color: #0f172a; box-shadow: 0 0 0 2px #0f172a; }
 .prod-sizes { flex: 0 1 260px; min-width: 0; }
-.prod-stats { flex: 0 0 170px; min-width: 0; }
+.prod-stats { flex: 0 0 200px; min-width: 0; }
 .prod-price { flex: 0 0 110px; text-align: right; }
 .prod-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 .prod-actions button:disabled { opacity: 0.35; cursor: default; }

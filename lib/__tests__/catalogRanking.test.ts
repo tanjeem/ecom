@@ -20,8 +20,8 @@ test('views and orders sorts; ties keep the current order; sold out goes last', 
   assert.deepEqual(rankIds([5, 6, 1], new Map([[1, st(10, 0)]]), 'orders', () => true), [1, 5, 6]);
 });
 
-test('Jetpack top-posts: summary or per-day lists, home page skipped', () => {
-  assert.deepEqual([...viewsFromTopPosts({ summary: { postviews: [{ id: 6298, views: 12 }, { id: 0, views: 99 }] } })], [[6298, 12]]);
+test('Jetpack top-posts: summary or per-day lists, product pages only', () => {
+  assert.deepEqual([...viewsFromTopPosts({ summary: { postviews: [{ id: 6298, views: 12, type: 'product' }, { id: 0, views: 99 }, { id: 60, views: 500, type: 'page' }] } })], [[6298, 12]]);
   const byDay = viewsFromTopPosts({ days: { '2026-11-15': { postviews: [{ id: 1, views: 2 }] }, '2026-11-16': { postviews: [{ id: 1, views: 3 }, { id: 2, views: 1 }] } } });
   assert.deepEqual([...byDay], [[1, 5], [2, 1]]);
 });

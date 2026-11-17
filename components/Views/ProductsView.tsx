@@ -29,7 +29,7 @@ const SORTS: { id: SortMode; label: string; icon: React.FC<any>; needsViews: boo
   { id: 'views', label: 'Most viewed', icon: Eye, needsViews: true, hint: 'Page views. Products near the top get more views just for being there.' },
   { id: 'orders', label: 'Most ordered', icon: ShoppingBag, needsViews: false, hint: 'Website orders in the period.' },
 ];
-const pct = (x: number) => `${(x * 100).toFixed(x >= 0.1 ? 0 : 1)}%`;
+const pct = (x: number) => `${(x * 100).toFixed(x >= 0.1 ? 0 : x >= 0.01 ? 1 : 2)}%`;
 const shortDay = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 const SIZE_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL'];

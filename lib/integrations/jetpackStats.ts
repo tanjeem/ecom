@@ -13,7 +13,7 @@ type TopPosts = {
   summary?: { postviews?: PostView[] };
 };
 
-/** Pure: total views per post id from a top-posts response, whether it came summarised or day by day. */
+/** Pure: total views per product page from a top-posts response, whether it came summarised or day by day. */
 export function viewsFromTopPosts(res: TopPosts): Map<number, number> {
   const out = new Map<number, number>();
   const lists = res.summary?.postviews
@@ -22,7 +22,7 @@ export function viewsFromTopPosts(res: TopPosts): Map<number, number> {
   for (const list of lists) {
     for (const p of list) {
       const id = Number(p.id);
-      if (!id) continue; // 0 is the home page
+      if (!id || (p.type && p.type !== 'product')) continue; // product pages only (0 is the home page)
       out.set(id, (out.get(id) || 0) + (Number(p.views) || 0));
     }
   }
